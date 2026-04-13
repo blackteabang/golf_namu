@@ -7,6 +7,7 @@ const app = {
         this.cacheDOM();
         this.bindEvents();
         this.loadFromStorage();
+        this.loadFromServer(); // Sync with server on load
         this.renderPlayerList();
     },
 
@@ -290,10 +291,48 @@ const app = {
 
     saveToStorage() {
         localStorage.setItem('golf_bet_players', JSON.stringify(this.players));
+        this.syncWithServer();
     },
 
     saveHistoryToStorage() {
         localStorage.setItem('golf_bet_history', JSON.stringify(this.history));
+        this.syncWithServer();
+    },
+
+    async syncWithServer() {
+        try {
+            await fetch('/api/history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    players: this.players,
+                    history: this.history
+                })
+            });
+        } catch (error) {
+            console.error('Server sync failed:', error);
+        }
+    },
+
+    async loadFromServer() {
+        try {
+            const response = await fetch('/api/history');
+            const data = await response.json();
+            
+            if (data.players && data.players.length > 0) {
+                this.players = data.players;
+                localStorage.setItem('golf_bet_players', JSON.stringify(this.players));
+            }
+            
+            if (data.history && data.history.length > 0) {
+                this.history = data.history;
+                localStorage.setItem('golf_bet_history', JSON.stringify(this.history));
+            }
+
+            this.renderPlayerList();
+        } catch (error) {
+            console.error('Fetch from server failed:', error);
+        }
     },
 
     loadFromStorage() {

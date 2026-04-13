@@ -1,0 +1,12 @@
+{
+  "name": "golf-namu",
+  "version": "1.0.0",
+  "description": "Premium Golf Betting Manager",
+  "main": "index.html",
+  "scripts": {
+    "start": "serve ."
+  },
+  "dependencies": {
+    "@vercel/kv": "^1.0.1"
+  }
+}
