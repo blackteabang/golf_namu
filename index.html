@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>몇대몇! - 즐거운골프생활</title>
+    <meta name="description" content="골프 모임 회원들을 위한 간편하고 고급스러운 내기 계산기">
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <div class="logo">
+                <span class="icon">⛳</span>
+                <h1>몇대몇!</h1>
+            </div>
+            <p class="subtitle">오늘도 즐거운 골프생활</p>
+            <button id="show-history-btn" class="btn-history">기록 📜</button>
+        </header>
+
+        <main id="app-main">
+            <!-- Step 1: Player Input -->
+            <section id="step-players" class="glass-card active">
+                <div class="section-header">
+                    <h2>참여자 등록</h2>
+                    <span class="counter"><span id="player-count">0</span> / 12</span>
+                </div>
+                <div class="input-group">
+                    <input type="text" id="player-name" placeholder="닉네임 (예: 홍길동)" maxlength="10">
+                    <input type="number" id="player-handy" placeholder="핸디 (예: 18)" min="0" max="99">
+                    <button id="add-player-btn" class="btn-primary">추가</button>
+                </div>
+                <div class="player-list-container">
+                    <ul id="player-list">
+                        <!-- Players will be added here -->
+                    </ul>
+                </div>
+                <div class="action-footer">
+                    <button id="assign-rooms-btn" class="btn-large" disabled>랜덤 조 배정 시작</button>
+                </div>
+            </section>
+
+            <!-- Step 2: Room Assignment & Score Input -->
+            <section id="step-rooms" class="glass-card">
+                <div class="section-header">
+                    <button class="btn-back" onclick="app.showStep('players')">← 이전</button>
+                    <h2>조별 경기 결과</h2>
+                </div>
+                <div id="rooms-container" class="rooms-grid">
+                    <!-- Rooms will be generated here -->
+                </div>
+                <div class="action-footer">
+                    <button id="view-results-btn" class="btn-large">최종 순위 보기</button>
+                </div>
+            </section>
+
+            <!-- Step 3: Final Results -->
+            <section id="step-results" class="glass-card">
+                <div class="section-header">
+                    <button class="btn-back" onclick="app.showStep('rooms')">← 이전</button>
+                    <h2>최종 랭킹</h2>
+                </div>
+                <div class="leaderboard-container">
+                    <table id="leaderboard">
+                        <thead>
+                            <tr>
+                                <th>순위</th>
+                                <th>이름</th>
+                                <th>Gross</th>
+                                <th>HDCP</th>
+                                <th>Net</th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-body">
+                            <!-- Results will be shown here -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="action-footer">
+                    <button id="restart-btn" class="btn-outline">새로 시작하기</button>
+                </div>
+            </section>
+
+            <!-- Step 4: Game History -->
+            <section id="step-history" class="glass-card">
+                <div class="section-header">
+                    <button class="btn-back" onclick="app.showStep('players')">← 메인으로</button>
+                    <h2>과거 경기 기록</h2>
+                </div>
+                <div id="history-container" class="history-list">
+                    <!-- History items will be added here -->
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>&copy; 2026 빅뱅나무. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
