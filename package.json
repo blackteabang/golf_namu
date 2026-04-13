@@ -1,6 +1,7 @@
 {
   "name": "golf-namu",
   "version": "1.0.0",
+  "type": "module",
   "description": "Premium Golf Betting Manager",
   "main": "index.html",
   "scripts": {
