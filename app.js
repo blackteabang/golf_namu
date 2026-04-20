@@ -9,6 +9,13 @@ const app = {
         this.loadFromStorage();
         this.loadFromServer(); // Sync with server on load
         this.renderPlayerList();
+        
+        if (this.rooms && this.rooms.length > 0) {
+            this.renderRooms();
+            this.showStep('rooms');
+        } else {
+            this.showStep('players');
+        }
     },
 
     cacheDOM() {
@@ -21,6 +28,7 @@ const app = {
         
         this.roomsContainer = document.getElementById('rooms-container');
         this.viewResultsBtn = document.getElementById('view-results-btn');
+        this.resetRoomsBtn = document.getElementById('reset-rooms-btn');
         
         this.resultsBody = document.getElementById('results-body');
         this.restartBtn = document.getElementById('restart-btn');
@@ -41,6 +49,16 @@ const app = {
         this.viewResultsBtn.addEventListener('click', () => this.calculateRanking());
         this.restartBtn.addEventListener('click', () => this.restart());
         this.showHistoryBtn.addEventListener('click', () => this.showHistory());
+        
+        if (this.resetRoomsBtn) {
+            this.resetRoomsBtn.addEventListener('click', () => {
+                if (confirm('조 편성을 초기화하고 처음부터 다시 시작하시겠습니까?')) {
+                    this.rooms = [];
+                    this.saveCurrentGameToStorage();
+                    this.showStep('players');
+                }
+            });
+        }
         
         // Enter key support for input
         this.playerHandyInput.addEventListener('keypress', (e) => {
@@ -129,21 +147,27 @@ const app = {
         
         // Split into rooms of 3
         for (let i = 0; i < shuffled.length; i += 3) {
-            this.rooms.push(shuffled.slice(i, i + 3));
+            this.rooms.push(shuffled.slice(i, i + 3).map(p => p.id));
         }
 
+        this.saveCurrentGameToStorage();
+        this.saveToStorage();
         this.renderRooms();
         this.showStep('rooms');
     },
 
     renderRooms() {
         this.roomsContainer.innerHTML = '';
-        this.rooms.forEach((room, index) => {
+        this.rooms.forEach((roomIds, index) => {
             const roomDiv = document.createElement('div');
             roomDiv.className = 'room-card';
             
             let playersHTML = '';
-            room.forEach(player => {
+            roomIds.forEach(playerId => {
+                const id = typeof playerId === 'object' ? playerId.id : playerId;
+                const player = this.players.find(p => p.id === id);
+                if (!player) return;
+
                 playersHTML += `
                     <div class="room-player">
                         <span class="player-name">${player.name}</span>
@@ -152,7 +176,7 @@ const app = {
                             <input type="number" 
                                    class="score-input" 
                                    placeholder="타수" 
-                                   value="0"
+                                   value="${player.score || 0}"
                                    onfocus="if(this.value=='0')this.value=''"
                                    onblur="if(this.value=='')this.value='0'"
                                    onchange="app.updateScore(${player.id}, this.value)">
@@ -294,6 +318,10 @@ const app = {
         this.syncWithServer();
     },
 
+    saveCurrentGameToStorage() {
+        localStorage.setItem('golf_bet_current_rooms', JSON.stringify(this.rooms));
+    },
+
     saveHistoryToStorage() {
         localStorage.setItem('golf_bet_history', JSON.stringify(this.history));
         this.syncWithServer();
@@ -345,12 +373,21 @@ const app = {
         if (savedHistory) {
             this.history = JSON.parse(savedHistory);
         }
+
+        const savedRooms = localStorage.getItem('golf_bet_current_rooms');
+        if (savedRooms) {
+            this.rooms = JSON.parse(savedRooms);
+            // Convert to IDs if they are objects for backward compatibility
+            this.rooms = this.rooms.map(room => room.map(p => typeof p === 'object' ? p.id : p));
+        }
     },
 
     restart() {
         if (confirm('현재 게임 결과를 기록하고 새로운 게임을 시작하시겠습니까? (등록된 인원은 유지됩니다)')) {
             // Reset scores for all players but keep the player list
             this.players.forEach(p => p.score = 0);
+            this.rooms = [];
+            this.saveCurrentGameToStorage();
             this.saveToStorage();
             this.renderPlayerList();
             this.showStep('players');
