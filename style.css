@@ -211,9 +211,34 @@ input:focus {
     color: var(--text-main);
 }
 
-.player-handy {
+.player-handy, .player-handy-btn {
     font-size: 0.8rem;
-    color: var(--text-muted);
+    color: var(--primary);
+    background: rgba(0, 163, 108, 0.08);
+    padding: 2px 8px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    width: fit-content;
+    margin-top: 2px;
+}
+
+.player-handy-btn:hover {
+    background: rgba(0, 163, 108, 0.18);
+    transform: scale(1.03);
+}
+
+.player-handy-btn:active {
+    transform: scale(0.96);
+}
+
+.player-handy-btn small {
+    font-size: 0.7rem;
+    opacity: 0.8;
 }
 
 .player-item.inactive {
@@ -423,6 +448,23 @@ input:focus {
     border-radius: 8px;
     min-width: 45px;
     text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.player-handy-badge:hover {
+    background: rgba(0, 163, 108, 0.22);
+    transform: scale(1.04);
+}
+
+.player-handy-badge:active {
+    transform: scale(0.96);
+}
+
+.player-handy-badge small {
+    font-size: 0.65rem;
+    opacity: 0.8;
 }
 
 .score-input {

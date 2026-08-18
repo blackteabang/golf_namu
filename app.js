@@ -133,6 +133,28 @@ const app = {
         this.renderPlayerList();
     },
 
+    // ✏️ 등록된 선수의 핸디캡을 수정하는 기능이에요.
+    editPlayerHandy(playerId) {
+        const player = this.players.find(p => p.id === playerId);
+        if (!player) return;
+
+        this.openKeypad({
+            type: 'handy',
+            playerId: player.id,
+            title: `${player.name} 핸디캡 수정`,
+            value: player.handy,
+            onConfirm: (val) => {
+                const handy = parseInt(val);
+                player.handy = isNaN(handy) ? 0 : handy;
+                this.saveToStorage();
+                this.renderPlayerList();
+                if (this.rooms && this.rooms.length > 0) {
+                    this.renderRooms();
+                }
+            }
+        });
+    },
+
     renderPlayerList() {
         this.playerList.innerHTML = '';
         this.players.forEach(player => {
@@ -141,7 +163,9 @@ const app = {
             li.innerHTML = `
                 <div class="player-info">
                     <span class="player-name">${player.name}</span>
-                    <span class="player-handy">HDCP: ${player.handy}</span>
+                    <span class="player-handy-btn" title="클릭하여 핸디캡 수정" onclick="app.editPlayerHandy(${player.id})">
+                        HDCP: ${player.handy} <small>✏️</small>
+                    </span>
                 </div>
                 <div class="player-actions">
                     <div class="participation-toggle-group">
@@ -216,7 +240,9 @@ const app = {
                         </div>
                         <span class="player-name">${player.name}</span>
                         <div class="player-input-group">
-                            <span class="player-handy-badge">H: ${player.handy}</span>
+                            <span class="player-handy-badge" title="클릭하여 핸디캡 수정" onclick="app.editPlayerHandy(${player.id})">
+                                H: ${player.handy} <small>✏️</small>
+                            </span>
                             <input type="text" 
                                    class="score-input" 
                                    placeholder="타수" 
