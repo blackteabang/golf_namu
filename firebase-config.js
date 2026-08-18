@@ -5,6 +5,5 @@
 // 3. 생성된 데이터베이스 URL을 아래 databaseURL에 입력하거나, 앱 화면의 '☁️ 서버' 버튼에서 직접 설정할 수 있습니다.
 
 window.FIREBASE_CONFIG = {
-    // 예: "https://your-project-id-default-rtdb.firebaseio.com"
-    databaseURL: ""
+    databaseURL: "https://namugolf-2c1f8-default-rtdb.firebaseio.com"
 };
