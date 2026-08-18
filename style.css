@@ -387,13 +387,18 @@ input:focus {
     justify-content: space-between;
     align-items: center;
     gap: 8px;
-    padding: 8px 10px;
-    background: #f8fafc;
-    border: 1px solid #f1f5f9;
-    border-radius: 12px;
+    padding: 8px 4px;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #e2e8f0;
+    border-radius: 0;
     transition: all 0.2s ease;
     cursor: grab;
     user-select: none;
+}
+
+.room-player:last-child {
+    border-bottom: none;
 }
 
 .room-player:active {
