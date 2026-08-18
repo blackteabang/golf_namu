@@ -170,18 +170,28 @@ const app = {
 
     renderRooms() {
         this.roomsContainer.innerHTML = '';
+        if (!this.rooms || this.rooms.length === 0) return;
+
         this.rooms.forEach((roomIds, index) => {
             const roomDiv = document.createElement('div');
             roomDiv.className = 'room-card';
+            roomDiv.dataset.roomIdx = index;
             
             let playersHTML = '';
-            roomIds.forEach(playerId => {
-                const id = typeof playerId === 'object' ? playerId.id : playerId;
+            const validPlayerIds = roomIds.map(p => typeof p === 'object' ? p.id : p);
+
+            validPlayerIds.forEach(id => {
                 const player = this.players.find(p => p.id === id);
                 if (!player) return;
 
                 playersHTML += `
-                    <div class="room-player">
+                    <div class="room-player" 
+                         draggable="true" 
+                         data-player-id="${player.id}" 
+                         data-room-idx="${index}">
+                        <div class="drag-handle" title="드래그하여 다른 방으로 이동">
+                            <span>⠿</span>
+                        </div>
                         <span class="player-name">${player.name}</span>
                         <div class="player-input-group">
                             <span class="player-handy-badge">H: ${player.handy}</span>
@@ -196,11 +206,220 @@ const app = {
                 `;
             });
 
+            if (validPlayerIds.length === 0) {
+                playersHTML = `
+                    <div class="room-empty-placeholder">
+                        선수를 여기로 드래그하세요
+                    </div>
+                `;
+            }
+
+            const deleteRoomBtnHTML = (validPlayerIds.length === 0 && this.rooms.length > 1)
+                ? `<button class="btn-delete-room" title="빈 방 삭제" onclick="app.removeRoom(${index})">삭제</button>`
+                : '';
+
             roomDiv.innerHTML = `
-                <div class="room-title">Room ${index + 1}</div>
-                ${playersHTML}
+                <div class="room-header">
+                    <div class="room-header-left">
+                        <span class="room-title">Room ${index + 1}</span>
+                        <span class="room-player-badge">${validPlayerIds.length}명</span>
+                    </div>
+                    ${deleteRoomBtnHTML}
+                </div>
+                <div class="room-players-list">
+                    ${playersHTML}
+                </div>
             `;
             this.roomsContainer.appendChild(roomDiv);
+        });
+
+        this.initRoomDragAndDrop();
+    },
+
+    addRoom() {
+        this.rooms.push([]);
+        this.saveCurrentGameToStorage();
+        this.renderRooms();
+    },
+
+    removeRoom(roomIdx) {
+        if (this.rooms[roomIdx] && this.rooms[roomIdx].length === 0) {
+            this.rooms.splice(roomIdx, 1);
+            this.saveCurrentGameToStorage();
+            this.renderRooms();
+        }
+    },
+
+    movePlayerToRoom(playerId, targetRoomIdx) {
+        targetRoomIdx = parseInt(targetRoomIdx);
+        playerId = parseInt(playerId);
+
+        if (isNaN(targetRoomIdx) || targetRoomIdx < 0 || targetRoomIdx >= this.rooms.length) return;
+
+        let sourceRoomIdx = -1;
+        for (let i = 0; i < this.rooms.length; i++) {
+            const idx = this.rooms[i].findIndex(p => (typeof p === 'object' ? p.id : p) === playerId);
+            if (idx !== -1) {
+                sourceRoomIdx = i;
+                this.rooms[i].splice(idx, 1);
+                break;
+            }
+        }
+
+        if (sourceRoomIdx === -1) return;
+
+        // 타겟 방에 선수 추가
+        this.rooms[targetRoomIdx].push(playerId);
+
+        this.saveCurrentGameToStorage();
+        this.renderRooms();
+    },
+
+    initRoomDragAndDrop() {
+        const roomCards = this.roomsContainer.querySelectorAll('.room-card');
+        const playerItems = this.roomsContainer.querySelectorAll('.room-player');
+
+        // 1. 데스크톱 HTML5 드래그 앤 드롭
+        playerItems.forEach(item => {
+            item.addEventListener('dragstart', (e) => {
+                const playerId = item.dataset.playerId;
+                const roomIdx = item.dataset.roomIdx;
+                e.dataTransfer.setData('text/plain', JSON.stringify({ playerId, fromRoomIdx: roomIdx }));
+                e.dataTransfer.effectAllowed = 'move';
+                item.classList.add('dragging');
+            });
+
+            item.addEventListener('dragend', () => {
+                item.classList.remove('dragging');
+                roomCards.forEach(card => card.classList.remove('drag-over'));
+            });
+        });
+
+        roomCards.forEach(card => {
+            card.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                card.classList.add('drag-over');
+            });
+
+            card.addEventListener('dragleave', (e) => {
+                if (!card.contains(e.relatedTarget)) {
+                    card.classList.remove('drag-over');
+                }
+            });
+
+            card.addEventListener('drop', (e) => {
+                e.preventDefault();
+                card.classList.remove('drag-over');
+                try {
+                    const raw = e.dataTransfer.getData('text/plain');
+                    if (raw) {
+                        const data = JSON.parse(raw);
+                        const targetRoomIdx = parseInt(card.dataset.roomIdx);
+                        if (data && data.playerId !== undefined) {
+                            app.movePlayerToRoom(data.playerId, targetRoomIdx);
+                        }
+                    }
+                } catch (err) {
+                    console.error('Drop error:', err);
+                }
+            });
+        });
+
+        // 2. 모바일 터치 드래그 앤 드롭
+        let touchDragState = null;
+
+        playerItems.forEach(item => {
+            const handle = item.querySelector('.drag-handle') || item;
+
+            handle.addEventListener('touchstart', (e) => {
+                if (e.target.closest('.score-input') || e.target.closest('.player-handy-badge')) return;
+
+                const touch = e.touches[0];
+                const playerId = parseInt(item.dataset.playerId);
+                const player = this.players.find(p => p.id === playerId);
+                const playerName = player ? player.name : '';
+                const handy = player ? player.handy : 0;
+
+                touchDragState = {
+                    item,
+                    playerId,
+                    playerName,
+                    handy,
+                    startX: touch.clientX,
+                    startY: touch.clientY,
+                    isDragging: false,
+                    avatar: null,
+                    currentTargetCard: null
+                };
+            }, { passive: true });
+
+            handle.addEventListener('touchmove', (e) => {
+                if (!touchDragState) return;
+
+                const touch = e.touches[0];
+                const deltaX = Math.abs(touch.clientX - touchDragState.startX);
+                const deltaY = Math.abs(touch.clientY - touchDragState.startY);
+
+                if (!touchDragState.isDragging && (deltaX > 6 || deltaY > 6)) {
+                    touchDragState.isDragging = true;
+                    touchDragState.item.classList.add('dragging');
+
+                    const avatar = document.createElement('div');
+                    avatar.className = 'touch-drag-avatar';
+                    avatar.innerHTML = `<span>⠿</span> <strong>${touchDragState.playerName}</strong> <small>H:${touchDragState.handy}</small>`;
+                    document.body.appendChild(avatar);
+                    touchDragState.avatar = avatar;
+                }
+
+                if (touchDragState.isDragging) {
+                    e.preventDefault();
+
+                    if (touchDragState.avatar) {
+                        touchDragState.avatar.style.left = `${touch.clientX}px`;
+                        touchDragState.avatar.style.top = `${touch.clientY}px`;
+                    }
+
+                    if (touchDragState.avatar) touchDragState.avatar.style.display = 'none';
+                    const elemBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+                    if (touchDragState.avatar) touchDragState.avatar.style.display = '';
+
+                    const targetCard = elemBelow ? elemBelow.closest('.room-card') : null;
+
+                    roomCards.forEach(c => {
+                        if (c === targetCard) {
+                            c.classList.add('drag-over');
+                        } else {
+                            c.classList.remove('drag-over');
+                        }
+                    });
+
+                    touchDragState.currentTargetCard = targetCard;
+                }
+            }, { passive: false });
+
+            const endTouchDrag = () => {
+                if (!touchDragState) return;
+
+                if (touchDragState.avatar) {
+                    touchDragState.avatar.remove();
+                }
+
+                touchDragState.item.classList.remove('dragging');
+                roomCards.forEach(c => c.classList.remove('drag-over'));
+
+                if (touchDragState.isDragging && touchDragState.currentTargetCard) {
+                    const targetRoomIdx = parseInt(touchDragState.currentTargetCard.dataset.roomIdx);
+                    if (!isNaN(targetRoomIdx)) {
+                        app.movePlayerToRoom(touchDragState.playerId, targetRoomIdx);
+                    }
+                }
+
+                touchDragState = null;
+            };
+
+            handle.addEventListener('touchend', endTouchDrag);
+            handle.addEventListener('touchcancel', endTouchDrag);
         });
     },
 
@@ -522,8 +741,10 @@ const app = {
             }
 
             if (changedRooms && this.rooms.length > 0) {
-                // Only re-render if not currently typing a score
-                if (!document.activeElement.classList.contains('score-input')) {
+                // Only re-render if not currently typing a score or dragging
+                const isKeypadOpen = !!document.getElementById('keypad-overlay');
+                const isDragging = !!document.querySelector('.touch-drag-avatar') || !!document.querySelector('.room-player.dragging');
+                if (!isKeypadOpen && !isDragging) {
                     this.renderRooms();
                 }
             } else if (changedRooms && this.rooms.length === 0) {

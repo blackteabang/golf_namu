@@ -246,36 +246,141 @@ input:focus {
     line-height: 1;
 }
 
+.step-guide-tip {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.6);
+    padding: 6px 12px;
+    border-radius: 10px;
+    margin-bottom: 1.2rem;
+    text-align: center;
+    border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
 .rooms-grid {
     display: grid;
-    gap: 1.5rem;
+    gap: 1.2rem;
 }
 
 .room-card {
     background: var(--item-bg);
-    border-radius: 16px;
-    padding: 1.5rem;
+    border-radius: 18px;
+    padding: 1.25rem;
     box-shadow: 0 4px 10px rgba(0,0,0,0.03);
-    border: 1px solid rgba(0,0,0,0.02);
+    border: 2px solid transparent;
+    transition: all 0.25s ease;
+}
+
+.room-card.drag-over {
+    border-color: var(--primary);
+    background: #f0fdf4;
+    transform: scale(1.01);
+    box-shadow: 0 8px 25px rgba(0, 163, 108, 0.18);
+}
+
+.room-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.85rem;
+    border-bottom: 1px solid #f1f5f9;
+    padding-bottom: 8px;
+}
+
+.room-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .room-title {
     font-size: 1rem;
     color: var(--primary);
-    margin-bottom: 1rem;
     font-weight: 700;
     text-transform: uppercase;
-    text-align: center;
-    border-bottom: 1px solid #f1f5f9;
-    padding-bottom: 10px;
+}
+
+.room-player-badge {
+    background: rgba(0, 163, 108, 0.1);
+    color: var(--primary);
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+}
+
+.btn-delete-room {
+    background: none;
+    border: 1px solid #fecaca;
+    color: var(--danger);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-delete-room:hover {
+    background: #fee2e2;
+}
+
+.room-players-list {
+    min-height: 48px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .room-player {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 12px;
+    gap: 8px;
+    padding: 8px 10px;
+    background: #f8fafc;
+    border: 1px solid #f1f5f9;
+    border-radius: 12px;
+    transition: all 0.2s ease;
+    cursor: grab;
+    user-select: none;
+}
+
+.room-player:active {
+    cursor: grabbing;
+}
+
+.room-player.dragging {
+    opacity: 0.35;
+    transform: scale(0.98);
+    border: 2px dashed var(--primary);
+    background: #f0fdf4;
+}
+
+.drag-handle {
+    color: var(--text-muted);
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 4px 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+    touch-action: none;
+}
+
+.drag-handle:hover {
+    opacity: 1;
+    color: var(--primary);
+}
+
+.room-player .player-name {
+    flex-grow: 1;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text-main);
 }
 
 .player-input-group {
@@ -295,16 +400,72 @@ input:focus {
     text-align: center;
 }
 
-.room-player:last-child {
-    margin-bottom: 0;
-}
-
 .score-input {
-    width: 70px;
+    width: 65px;
     text-align: center;
     font-weight: 600;
     font-size: 1rem;
-    background: #f8fafc;
+    background: #ffffff;
+    cursor: pointer;
+}
+
+.room-empty-placeholder {
+    border: 2px dashed #cbd5e1;
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: 600;
+    background: rgba(248, 250, 252, 0.6);
+}
+
+.touch-drag-avatar {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9999;
+    transform: translate(-50%, -50%) rotate(2deg);
+    background: var(--item-bg);
+    color: var(--text-main);
+    border: 2px solid var(--primary);
+    border-radius: 24px;
+    padding: 8px 16px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.touch-drag-avatar span {
+    color: var(--primary);
+}
+
+.touch-drag-avatar small {
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.btn-add-room {
+    width: 100%;
+    margin-top: 1rem;
+    padding: 12px;
+    border: 2px dashed #cbd5e1;
+    border-radius: 16px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-add-room:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(0, 163, 108, 0.05);
 }
 
 .leaderboard-container {

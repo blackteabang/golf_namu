@@ -50,9 +50,11 @@
                     <h2>조별 경기 결과</h2>
                     <button id="reset-rooms-btn" class="btn-back" style="color: var(--accent); font-weight: bold;">새로만들기</button>
                 </div>
+                <p class="step-guide-tip">💡 선수를 드래그(⠿)하여 다른 방으로 이동할 수 있습니다.</p>
                 <div id="rooms-container" class="rooms-grid">
                     <!-- Rooms will be generated here -->
                 </div>
+                <button type="button" id="add-room-btn" class="btn-add-room" onclick="app.addRoom()">+ 새 방 추가</button>
                 <div class="action-footer">
                     <button id="view-results-btn" class="btn-large">최종 순위 보기</button>
                 </div>
