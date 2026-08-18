@@ -142,7 +142,7 @@ const app = {
             type: 'handy',
             playerId: player.id,
             title: `${player.name} 핸디캡 수정`,
-            value: player.handy,
+            value: '',
             onConfirm: (val) => {
                 const handy = parseInt(val);
                 player.handy = isNaN(handy) ? 0 : handy;
@@ -530,7 +530,7 @@ const app = {
                     <button class="keypad-close" onclick="app.closeKeypad()">✕</button>
                 </div>
                 <div class="keypad-display">
-                    <span id="keypad-value" class="${this._keypadState.value.startsWith('-') ? 'negative' : ''}">${this._keypadState.value || '0'}</span>
+                    <span id="keypad-value" class="${this._keypadState.value.startsWith('-') ? 'negative' : ''}">${this._keypadState.value}</span>
                 </div>
                 <div class="keypad-grid">
                     <button class="keypad-btn" onclick="app.keypadInput('1')">1</button>
@@ -637,7 +637,7 @@ const app = {
     _updateKeypadDisplay() {
         const display = document.getElementById('keypad-value');
         if (display) {
-            display.textContent = this._keypadState.value || '0';
+            display.textContent = this._keypadState.value;
             display.className = this._keypadState.value.startsWith('-') ? 'negative' : '';
         }
     },
