@@ -1,4 +1,4 @@
-# ⛳ 몇대몇! - 즐거운 골프생활 (골프 조 편성 및 내기 계산기)
+# ⛳ 싱글벙글 - 즐거운 골프생활 (골프 조 편성 및 내기 계산기)
 
 > 🔗 **웹서비스 바로가기**: **[https://blackteabang.github.io/golf_namu/](https://blackteabang.github.io/golf_namu/)**
 
