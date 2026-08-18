@@ -44,18 +44,22 @@ header {
 }
 
 .logo {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 10px;
-    margin-bottom: 5px;
+    margin: 0 auto 10px auto;
+    background-color: #2563eb; /* 진한 파란색 배경 */
+    padding: 8px 16px;
+    border-radius: 4px;
 }
 
 .logo h1 {
     font-family: 'Outfit', sans-serif;
     font-size: 2rem;
     letter-spacing: 2px;
-    color: var(--primary-light);
+    color: #ffffff; /* 흰색 텍스트 */
+    text-shadow: none;
 }
 
 .icon {
@@ -520,6 +524,159 @@ footer {
 .history-player-row .net {
     font-weight: 700;
     color: var(--primary);
+}
+
+/* ===== Custom Score Keypad ===== */
+#keypad-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+#keypad-overlay.active {
+    opacity: 1;
+}
+
+.keypad-modal {
+    background: var(--card-bg);
+    border-radius: 24px 24px 0 0;
+    width: 100%;
+    max-width: 500px;
+    padding: 20px 24px 28px;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.15);
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+#keypad-overlay.active .keypad-modal {
+    transform: translateY(0);
+}
+
+.keypad-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.keypad-title {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--text-main);
+}
+
+.keypad-close {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 8px;
+    transition: background 0.2s;
+}
+
+.keypad-close:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.keypad-display {
+    background: var(--item-bg);
+    border-radius: 16px;
+    padding: 16px;
+    text-align: center;
+    margin-bottom: 16px;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+.keypad-display span {
+    font-family: 'Outfit', sans-serif;
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: var(--text-main);
+    letter-spacing: 2px;
+    transition: color 0.2s;
+}
+
+.keypad-display span.negative {
+    color: var(--danger);
+}
+
+.keypad-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.keypad-btn {
+    background: var(--item-bg);
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    border-radius: 14px;
+    padding: 16px;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--text-main);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.03);
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.keypad-btn:active {
+    transform: scale(0.94);
+    background: #e2e8f0;
+}
+
+.keypad-minus {
+    background: rgba(239, 68, 68, 0.08);
+    color: var(--danger);
+    font-weight: 800;
+    font-size: 1.5rem;
+    border-color: rgba(239, 68, 68, 0.15);
+}
+
+.keypad-minus:active {
+    background: rgba(239, 68, 68, 0.18);
+}
+
+.keypad-delete {
+    background: rgba(100, 116, 139, 0.08);
+    color: var(--text-muted);
+    font-size: 1.4rem;
+}
+
+.keypad-delete:active {
+    background: rgba(100, 116, 139, 0.18);
+}
+
+.keypad-confirm {
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: 16px;
+    background: linear-gradient(135deg, var(--primary-light), var(--primary));
+    color: white;
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(0, 163, 108, 0.25);
+    transition: transform 0.15s, opacity 0.15s;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.keypad-confirm:active {
+    transform: scale(0.98);
+    opacity: 0.9;
 }
 
 /* Animations */

@@ -185,13 +185,12 @@ const app = {
                         <span class="player-name">${player.name}</span>
                         <div class="player-input-group">
                             <span class="player-handy-badge">H: ${player.handy}</span>
-                            <input type="number" 
+                            <input type="text" 
                                    class="score-input" 
                                    placeholder="타수" 
                                    value="${player.score || 0}"
-                                   onfocus="if(this.value=='0')this.value=''"
-                                   onblur="if(this.value=='')this.value='0'"
-                                   onchange="app.updateScore(${player.id}, this.value)">
+                                   readonly
+                                   onclick="app.openKeypad(${player.id}, this)">
                         </div>
                     </div>
                 `;
@@ -211,6 +210,123 @@ const app = {
         if (player) {
             player.score = parseInt(score) || 0; // 숫자가 아니면 0으로 저장해요
             this.saveToStorage(); // 점수가 바뀔 때마다 잃어버리지 않게 몰래 저장해둬요!
+        }
+    },
+
+    // 🔢 커스텀 숫자 키패드: 모바일에서 음수(-)를 쉽게 입력할 수 있는 키패드예요!
+    _keypadState: {
+        playerId: null,
+        inputEl: null,
+        value: ''
+    },
+
+    openKeypad(playerId, inputEl) {
+        this._keypadState.playerId = playerId;
+        this._keypadState.inputEl = inputEl;
+        this._keypadState.value = inputEl.value === '0' ? '' : inputEl.value;
+
+        // 이미 키패드가 있으면 제거하고 새로 만들어요
+        this.closeKeypad();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'keypad-overlay';
+        overlay.innerHTML = `
+            <div class="keypad-modal">
+                <div class="keypad-header">
+                    <span class="keypad-title">스코어 입력</span>
+                    <button class="keypad-close" onclick="app.closeKeypad()">✕</button>
+                </div>
+                <div class="keypad-display">
+                    <span id="keypad-value">${this._keypadState.value || '0'}</span>
+                </div>
+                <div class="keypad-grid">
+                    <button class="keypad-btn" onclick="app.keypadInput('1')">1</button>
+                    <button class="keypad-btn" onclick="app.keypadInput('2')">2</button>
+                    <button class="keypad-btn" onclick="app.keypadInput('3')">3</button>
+                    <button class="keypad-btn" onclick="app.keypadInput('4')">4</button>
+                    <button class="keypad-btn" onclick="app.keypadInput('5')">5</button>
+                    <button class="keypad-btn" onclick="app.keypadInput('6')">6</button>
+                    <button class="keypad-btn" onclick="app.keypadInput('7')">7</button>
+                    <button class="keypad-btn" onclick="app.keypadInput('8')">8</button>
+                    <button class="keypad-btn" onclick="app.keypadInput('9')">9</button>
+                    <button class="keypad-btn keypad-minus" onclick="app.keypadToggleMinus()">−</button>
+                    <button class="keypad-btn" onclick="app.keypadInput('0')">0</button>
+                    <button class="keypad-btn keypad-delete" onclick="app.keypadDelete()">⌫</button>
+                </div>
+                <button class="keypad-confirm" onclick="app.keypadConfirm()">확인</button>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        // 오버레이 배경 클릭 시 닫기
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) app.closeKeypad();
+        });
+
+        // 부드럽게 등장하는 애니메이션
+        requestAnimationFrame(() => overlay.classList.add('active'));
+    },
+
+    keypadInput(num) {
+        let val = this._keypadState.value;
+        const isNegative = val.startsWith('-');
+        const digits = isNegative ? val.slice(1) : val;
+
+        // 최대 3자리까지만 입력 가능 (예: 999, -999)
+        if (digits.length >= 3) return;
+
+        const newDigits = digits + num;
+        this._keypadState.value = (isNegative ? '-' : '') + newDigits;
+        this._updateKeypadDisplay();
+    },
+
+    keypadToggleMinus() {
+        let val = this._keypadState.value;
+        if (val.startsWith('-')) {
+            this._keypadState.value = val.slice(1);
+        } else {
+            this._keypadState.value = '-' + val;
+        }
+        this._updateKeypadDisplay();
+    },
+
+    keypadDelete() {
+        let val = this._keypadState.value;
+        if (val.length <= 1 || (val.length === 2 && val.startsWith('-'))) {
+            this._keypadState.value = '';
+        } else {
+            this._keypadState.value = val.slice(0, -1);
+        }
+        this._updateKeypadDisplay();
+    },
+
+    keypadConfirm() {
+        const val = this._keypadState.value;
+        const score = parseInt(val) || 0;
+        const inputEl = this._keypadState.inputEl;
+
+        if (inputEl) {
+            inputEl.value = score;
+        }
+
+        this.updateScore(this._keypadState.playerId, score);
+        this.closeKeypad();
+    },
+
+    closeKeypad() {
+        const overlay = document.getElementById('keypad-overlay');
+        if (overlay) {
+            overlay.classList.remove('active');
+            setTimeout(() => overlay.remove(), 200);
+        }
+    },
+
+    _updateKeypadDisplay() {
+        const display = document.getElementById('keypad-value');
+        if (display) {
+            display.textContent = this._keypadState.value || '0';
+            // 음수일 때 빨간색으로 표시
+            display.className = this._keypadState.value.startsWith('-') ? 'negative' : '';
         }
     },
 
