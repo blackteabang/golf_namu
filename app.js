@@ -703,7 +703,7 @@ const app = {
 
     async syncWithServer() {
         try {
-            await fetch('/api/history', {
+            const res = await fetch('/api/history', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -712,14 +712,16 @@ const app = {
                     rooms: this.rooms
                 })
             });
+            if (!res.ok) return;
         } catch (error) {
-            console.error('Server sync failed:', error);
+            // Static hosting fallback
         }
     },
 
     async loadFromServer() {
         try {
             const response = await fetch('/api/history');
+            if (!response.ok) return;
             const data = await response.json();
             
             let changedPlayers = false;
