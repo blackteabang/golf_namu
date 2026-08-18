@@ -29,6 +29,7 @@ const app = {
     cacheDOM() {
         this.playerNameInput = document.getElementById('player-name');
         this.playerHandyInput = document.getElementById('player-handy');
+        this.toggleHandySignBtn = document.getElementById('toggle-handy-sign-btn');
         this.addPlayerBtn = document.getElementById('add-player-btn');
         this.playerList = document.getElementById('player-list');
         this.playerCountEl = document.getElementById('player-count');
@@ -58,6 +59,10 @@ const app = {
         this.restartBtn.addEventListener('click', () => this.restart());
         this.showHistoryBtn.addEventListener('click', () => this.showHistory());
         
+        if (this.toggleHandySignBtn) {
+            this.toggleHandySignBtn.addEventListener('click', () => this.toggleHandySign());
+        }
+
         if (this.resetRoomsBtn) {
             this.resetRoomsBtn.addEventListener('click', () => {
                 if (confirm('조 편성을 초기화하고 처음부터 다시 시작하시겠습니까?')) {
@@ -69,18 +74,35 @@ const app = {
         }
         
         // Enter key support for input
+        this.playerNameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.playerHandyInput.focus();
+        });
         this.playerHandyInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.addPlayer();
         });
     },
 
+    // ➕/➖ 핸디캡 부호(양수/음수)를 토글하는 기능이에요.
+    toggleHandySign() {
+        let val = this.playerHandyInput.value.trim();
+        if (val.startsWith('-')) {
+            this.playerHandyInput.value = val.slice(1);
+        } else if (val !== '') {
+            this.playerHandyInput.value = '-' + val;
+        } else {
+            this.playerHandyInput.value = '-';
+        }
+        this.playerHandyInput.focus();
+    },
+
     // ✏️ 새로운 선수를 바구니(players)에 추가하는 기능이에요.
     addPlayer() {
         const name = this.playerNameInput.value.trim();
-        const handy = parseInt(this.playerHandyInput.value);
+        const handyRaw = this.playerHandyInput.value.trim();
+        const handy = parseInt(handyRaw, 10);
 
         if (!name) return alert('이름을 입력해주세요.');
-        if (isNaN(handy)) return alert('핸디를 숫자로 입력해주세요.');
+        if (isNaN(handy)) return alert('핸디를 숫자로 입력해주세요. (예: 18 또는 -5)');
         if (this.players.length >= 12) return alert('최대 12명까지 등록 가능합니다.');
 
         const newPlayer = {
