@@ -6,16 +6,20 @@ const app = {
     // 🏆 과거의 경기 우승자 기록들을 담아둘 바구니예요.
     history: [],
 
+    // ☁️ 서버 (Firebase Realtime Database) 상태
+    server: {
+        dbUrl: '',
+        isConnected: false,
+        dbRef: null
+    },
+
     // 🚀 프로그램이 처음 켜질 때 가장 먼저 실행되는 '준비 운동' 단계예요!
     init() {
         this.cacheDOM(); // 화면에 있는 버튼들을 자바스크립트가 기억하게 해요.
         this.bindEvents(); // 버튼을 눌렀을 때 어떤 행동을 할지 귀를 달아줘요.
         this.loadFromStorage(); // 컴퓨터 비밀창고(로컬 스토리지)에서 예전 기록을 불러와요.
-        this.loadFromServer(); // 서버라는 큰 창고에서도 정보를 가져와요.
+        this.initServer(); // 클라우드 서버와 연결하고 최신 데이터를 불러와요.
         this.renderPlayerList(); // 화면에 선수들 이름을 예쁘게 그려줘요.
-        
-        // 3초마다 서버에서 다른 사람들의 입력을 불러와 내 화면에 적용해요.
-        setInterval(() => this.loadFromServer(), 3000);
         
         // 만약 조가 이미 짜여져 있다면 (인터넷 창을 실수로 껐다 켰을 때)
         if (this.rooms && this.rooms.length > 0) {
@@ -727,88 +731,304 @@ const app = {
         this.syncWithServer();
     },
 
-    async syncWithServer() {
+    // ☁️ Firebase Realtime Database 서버 초기화 및 실시간 동기화
+    initServer() {
+        const savedUrl = localStorage.getItem('golf_firebase_db_url') || (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.databaseURL) || '';
+        this.setServerUrl(savedUrl);
+    },
+
+    setServerUrl(url) {
+        url = (url || '').trim().replace(/\/+$/, '');
+        if (url.endsWith('.json')) url = url.replace(/\.json$/, '');
+        
+        if (!url) {
+            this.server.dbUrl = '';
+            this.server.isConnected = false;
+            this.server.dbRef = null;
+            this.updateServerStatusUI('offline', '로컬 모드');
+            return;
+        }
+
+        this.server.dbUrl = url;
+
+        // Firebase SDK 초기화 시도
         try {
-            const res = await fetch('/api/history', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    players: this.players,
-                    history: this.history,
-                    rooms: this.rooms
-                })
-            });
-            if (!res.ok) return;
-        } catch (error) {
-            // Static hosting fallback
+            if (typeof firebase !== 'undefined' && firebase.initializeApp) {
+                let appInstance;
+                if (!firebase.apps || firebase.apps.length === 0) {
+                    appInstance = firebase.initializeApp({ databaseURL: url });
+                } else {
+                    appInstance = firebase.apps[0];
+                }
+                const db = firebase.database(appInstance);
+                this.server.dbRef = db.ref('golf_namu');
+
+                // ⚡ Firebase 실시간 데이터 변경 감지 (어떤 폰/PC에서 변경하든 즉시 자동 반영)
+                this.server.dbRef.on('value', (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        this.handleServerData(data);
+                        this.server.isConnected = true;
+                        this.updateServerStatusUI('online', '실시간 동기화');
+                    }
+                }, (error) => {
+                    console.warn('Firebase SDK listener warning, using REST polling:', error);
+                    this.startRestSync();
+                });
+
+                this.server.isConnected = true;
+                this.updateServerStatusUI('online', '실시간 동기화');
+                return;
+            }
+        } catch (e) {
+            console.warn('Firebase SDK init warning:', e);
+        }
+
+        this.startRestSync();
+    },
+
+    startRestSync() {
+        if (!this.server.dbUrl) return;
+        this.loadFromServer();
+        if (this._restInterval) clearInterval(this._restInterval);
+        this._restInterval = setInterval(() => this.loadFromServer(), 3000);
+    },
+
+    updateServerStatusUI(status, text) {
+        const dot = document.getElementById('server-status-dot');
+        const label = document.getElementById('server-status-text');
+        if (dot) {
+            dot.className = `status-dot ${status}`;
+        }
+        if (label) {
+            label.textContent = text || (status === 'online' ? '동기화' : '서버');
+        }
+    },
+
+    handleServerData(data) {
+        if (!data) return;
+        let changedPlayers = false;
+        let changedRooms = false;
+        let changedHistory = false;
+
+        if (data.players && Array.isArray(data.players)) {
+            if (JSON.stringify(this.players) !== JSON.stringify(data.players)) {
+                this.players = data.players;
+                localStorage.setItem('golf_bet_players', JSON.stringify(this.players));
+                changedPlayers = true;
+            }
+        }
+
+        if (data.history && Array.isArray(data.history)) {
+            if (JSON.stringify(this.history) !== JSON.stringify(data.history)) {
+                this.history = data.history;
+                localStorage.setItem('golf_bet_history', JSON.stringify(this.history));
+                changedHistory = true;
+            }
+        }
+
+        if (data.rooms && Array.isArray(data.rooms)) {
+            if (JSON.stringify(this.rooms) !== JSON.stringify(data.rooms)) {
+                this.rooms = data.rooms;
+                localStorage.setItem('golf_bet_current_rooms', JSON.stringify(this.rooms));
+                changedRooms = true;
+            }
+        } else if (data.rooms && data.rooms.length === 0 && this.rooms.length > 0) {
+            this.rooms = [];
+            localStorage.setItem('golf_bet_current_rooms', JSON.stringify(this.rooms));
+            changedRooms = true;
+        }
+
+        if (changedPlayers) {
+            if (document.activeElement !== this.playerNameInput && document.activeElement !== this.playerHandyInput) {
+                this.renderPlayerList();
+            }
+        }
+
+        if (changedRooms && this.rooms.length > 0) {
+            const isKeypadOpen = !!document.getElementById('keypad-overlay');
+            const isDragging = !!document.querySelector('.touch-drag-avatar') || !!document.querySelector('.room-player.dragging');
+            if (!isKeypadOpen && !isDragging) {
+                this.renderRooms();
+            }
+        } else if (changedRooms && this.rooms.length === 0) {
+            this.showStep('players');
+        }
+
+        if (changedHistory) {
+            this.renderHistory();
+        }
+    },
+
+    async syncWithServer() {
+        const payload = {
+            players: this.players,
+            history: this.history,
+            rooms: this.rooms,
+            updatedAt: Date.now()
+        };
+
+        if (this.server.dbRef) {
+            try {
+                await this.server.dbRef.set(payload);
+                this.server.isConnected = true;
+                this.updateServerStatusUI('online', '실시간 동기화');
+                return;
+            } catch (err) {
+                console.warn('Firebase DB sync error:', err);
+            }
+        }
+
+        if (this.server.dbUrl) {
+            try {
+                const res = await fetch(`${this.server.dbUrl}/golf_namu.json`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    this.server.isConnected = true;
+                    this.updateServerStatusUI('online', '실시간 동기화');
+                }
+            } catch (err) {
+                console.warn('REST server sync error:', err);
+            }
         }
     },
 
     async loadFromServer() {
+        if (!this.server.dbUrl) return;
+
         try {
-            const response = await fetch('/api/history');
+            const response = await fetch(`${this.server.dbUrl}/golf_namu.json`);
             if (!response.ok) return;
             const data = await response.json();
-            
-            let changedPlayers = false;
-            let changedRooms = false;
-            let changedHistory = false;
-
-            if (data.players && data.players.length > 0) {
-                if (JSON.stringify(this.players) !== JSON.stringify(data.players)) {
-                    this.players = data.players;
-                    localStorage.setItem('golf_bet_players', JSON.stringify(this.players));
-                    changedPlayers = true;
-                }
+            if (data) {
+                this.handleServerData(data);
+                this.server.isConnected = true;
+                this.updateServerStatusUI('online', '실시간 동기화');
             }
-            
-            if (data.history && data.history.length > 0) {
-                if (JSON.stringify(this.history) !== JSON.stringify(data.history)) {
-                    this.history = data.history;
-                    localStorage.setItem('golf_bet_history', JSON.stringify(this.history));
-                    changedHistory = true;
-                }
-            }
-
-            if (data.rooms && data.rooms.length > 0) {
-                if (JSON.stringify(this.rooms) !== JSON.stringify(data.rooms)) {
-                    this.rooms = data.rooms;
-                    localStorage.setItem('golf_bet_current_rooms', JSON.stringify(this.rooms));
-                    changedRooms = true;
-                }
-            } else if (data.rooms && data.rooms.length === 0 && this.rooms.length > 0) {
-                // If rooms were reset on server by another user
-                this.rooms = [];
-                localStorage.setItem('golf_bet_current_rooms', JSON.stringify(this.rooms));
-                changedRooms = true;
-            }
-
-            if (changedPlayers) {
-                // Only re-render if not currently typing in a name or handy input
-                if (document.activeElement !== this.playerNameInput && document.activeElement !== this.playerHandyInput) {
-                    this.renderPlayerList();
-                }
-            }
-
-            if (changedRooms && this.rooms.length > 0) {
-                // Only re-render if not currently typing a score or dragging
-                const isKeypadOpen = !!document.getElementById('keypad-overlay');
-                const isDragging = !!document.querySelector('.touch-drag-avatar') || !!document.querySelector('.room-player.dragging');
-                if (!isKeypadOpen && !isDragging) {
-                    this.renderRooms();
-                }
-            } else if (changedRooms && this.rooms.length === 0) {
-                // Return to players step if rooms reset
-                this.showStep('players');
-            }
-
-            if (changedHistory) {
-                // Only update history view if not already focused on something
-                this.renderHistory();
-            }
-
         } catch (error) {
-            console.error('Fetch from server failed:', error);
+            console.warn('Load from server failed:', error);
+        }
+    },
+
+    openServerModal() {
+        const modal = document.getElementById('server-modal');
+        const input = document.getElementById('firebase-db-url');
+        const alertBox = document.getElementById('server-status-alert');
+
+        if (input) {
+            input.value = this.server.dbUrl || localStorage.getItem('golf_firebase_db_url') || (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.databaseURL) || '';
+        }
+
+        if (alertBox) {
+            if (this.server.isConnected) {
+                alertBox.className = 'server-status-box success';
+                alertBox.innerHTML = '🟢 현재 클라우드 서버와 실시간으로 연결되어 있습니다.';
+            } else if (this.server.dbUrl) {
+                alertBox.className = 'server-status-box warning';
+                alertBox.innerHTML = '🟡 서버 주소가 설정되었습니다. [연결 테스트]로 상태를 확인하세요.';
+            } else {
+                alertBox.className = 'server-status-box info';
+                alertBox.innerHTML = '💡 Firebase Realtime Database URL을 등록하면 모든 사람의 기기에서 데이터가 실시간 공유됩니다.';
+            }
+        }
+
+        if (modal) {
+            modal.style.display = 'flex';
+        }
+    },
+
+    closeServerModal() {
+        const modal = document.getElementById('server-modal');
+        if (modal) modal.style.display = 'none';
+    },
+
+    async saveServerConfig() {
+        const input = document.getElementById('firebase-db-url');
+        const alertBox = document.getElementById('server-status-alert');
+        let url = (input ? input.value : '').trim();
+
+        if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+            url = 'https://' + url;
+        }
+
+        localStorage.setItem('golf_firebase_db_url', url);
+        if (window.FIREBASE_CONFIG) window.FIREBASE_CONFIG.databaseURL = url;
+
+        if (alertBox) {
+            alertBox.className = 'server-status-box info';
+            alertBox.textContent = '연결 중...';
+        }
+
+        this.setServerUrl(url);
+
+        if (url) {
+            try {
+                await this.syncWithServer();
+                await this.loadFromServer();
+                if (alertBox) {
+                    alertBox.className = 'server-status-box success';
+                    alertBox.textContent = '✅ 서버 연결 및 데이터 저장이 성공했습니다!';
+                }
+                setTimeout(() => this.closeServerModal(), 1200);
+            } catch (err) {
+                if (alertBox) {
+                    alertBox.className = 'server-status-box error';
+                    alertBox.textContent = '❌ 연결 실패: URL 및 Firebase 보안 규칙(테스트 모드)을 확인해주세요.';
+                }
+            }
+        } else {
+            if (alertBox) {
+                alertBox.className = 'server-status-box info';
+                alertBox.textContent = '로컬 모드로 전환되었습니다.';
+            }
+            setTimeout(() => this.closeServerModal(), 800);
+        }
+    },
+
+    async testServerConnection() {
+        const input = document.getElementById('firebase-db-url');
+        const alertBox = document.getElementById('server-status-alert');
+        let url = (input ? input.value : '').trim().replace(/\/+$/, '');
+        if (url.endsWith('.json')) url = url.replace(/\.json$/, '');
+
+        if (!url) {
+            if (alertBox) {
+                alertBox.className = 'server-status-box error';
+                alertBox.textContent = 'Firebase Database URL을 입력해주세요.';
+            }
+            return;
+        }
+
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            url = 'https://' + url;
+        }
+
+        if (alertBox) {
+            alertBox.className = 'server-status-box info';
+            alertBox.textContent = '연결 테스트 중...';
+        }
+
+        try {
+            const res = await fetch(`${url}/golf_namu.json`);
+            if (res.ok) {
+                if (alertBox) {
+                    alertBox.className = 'server-status-box success';
+                    alertBox.textContent = '✅ 연결 성공! 읽기 및 쓰기가 정상 작동합니다.';
+                }
+            } else {
+                if (alertBox) {
+                    alertBox.className = 'server-status-box error';
+                    alertBox.textContent = `❌ 응답 오류 (${res.status}): Firebase Database 보안 규칙에서 읽기/쓰기 권한을 확인해주세요.`;
+                }
+            }
+        } catch (err) {
+            if (alertBox) {
+                alertBox.className = 'server-status-box error';
+                alertBox.textContent = '❌ 서버에 연결할 수 없습니다. URL 주소를 다시 확인해주세요.';
+            }
         }
     },
 

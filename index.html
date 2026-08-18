@@ -18,7 +18,13 @@
                 <h1>몇대몇!</h1>
             </div>
             <p class="subtitle">오늘도 즐거운 골프생활</p>
-            <button id="show-history-btn" class="btn-history">기록 📜</button>
+            <div class="header-nav-buttons">
+                <button id="server-settings-btn" class="btn-server" onclick="app.openServerModal()" title="서버 연결 설정">
+                    <span id="server-status-dot" class="status-dot"></span>
+                    <span id="server-status-text">서버</span>
+                </button>
+                <button id="show-history-btn" class="btn-history">기록 📜</button>
+            </div>
         </header>
 
         <main id="app-main">
@@ -97,6 +103,39 @@
                     <!-- History items will be added here -->
                 </div>
             </section>
+
+            <!-- Server Settings Modal -->
+            <div id="server-modal" class="modal-overlay" style="display: none;">
+                <div class="modal-card">
+                    <div class="modal-header">
+                        <h3>☁️ 서버 데이터 동기화 설정</h3>
+                        <button class="modal-close" onclick="app.closeServerModal()">✕</button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="modal-description">
+                            모든 사람의 기기(스마트폰, PC)에서 참여자 정보와 경기 기록을 실시간으로 공유하고 서버에 영구 저장하려면 <strong>Firebase Realtime Database URL</strong>을 입력하세요.
+                        </p>
+                        <div class="input-field-group">
+                            <label for="firebase-db-url" class="input-label">Firebase Database URL</label>
+                            <input type="url" id="firebase-db-url" placeholder="https://your-project-default-rtdb.firebaseio.com">
+                        </div>
+                        <div id="server-status-alert" class="server-status-box"></div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn-primary" onclick="app.saveServerConfig()">저장 및 연결</button>
+                            <button type="button" class="btn-secondary" onclick="app.testServerConnection()">연결 테스트</button>
+                        </div>
+                        <details class="server-help-details">
+                            <summary>❓ 무료 Firebase DB 주소 만드는 법 (1분)</summary>
+                            <ol>
+                                <li><a href="https://console.firebase.google.com" target="_blank" rel="noopener">Firebase 콘솔</a> 접속 후 <strong>프로젝트 만들기</strong></li>
+                                <li>좌측 메뉴 <strong>빌드 > Realtime Database</strong> 클릭 후 <strong>데이터베이스 만들기</strong></li>
+                                <li>보안 규칙에서 <strong>테스트 모드에서 시작</strong> (읽기/쓰기 허용) 선택</li>
+                                <li>상단에 표시된 <code>https://...firebaseio.com</code> 주소를 복사하여 여기에 붙여넣기</li>
+                            </ol>
+                        </details>
+                    </div>
+                </div>
+            </div>
         </main>
 
         <footer>
@@ -104,6 +143,9 @@
         </footer>
     </div>
 
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="firebase-config.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
