@@ -29,7 +29,6 @@ const app = {
     cacheDOM() {
         this.playerNameInput = document.getElementById('player-name');
         this.playerHandyInput = document.getElementById('player-handy');
-        this.toggleHandySignBtn = document.getElementById('toggle-handy-sign-btn');
         this.addPlayerBtn = document.getElementById('add-player-btn');
         this.playerList = document.getElementById('player-list');
         this.playerCountEl = document.getElementById('player-count');
@@ -58,10 +57,6 @@ const app = {
         this.viewResultsBtn.addEventListener('click', () => this.calculateRanking());
         this.restartBtn.addEventListener('click', () => this.restart());
         this.showHistoryBtn.addEventListener('click', () => this.showHistory());
-        
-        if (this.toggleHandySignBtn) {
-            this.toggleHandySignBtn.addEventListener('click', () => this.toggleHandySign());
-        }
 
         if (this.resetRoomsBtn) {
             this.resetRoomsBtn.addEventListener('click', () => {
@@ -75,24 +70,10 @@ const app = {
         
         // Enter key support for input
         this.playerNameInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.playerHandyInput.focus();
+            if (e.key === 'Enter') {
+                this.openHandyKeypad();
+            }
         });
-        this.playerHandyInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.addPlayer();
-        });
-    },
-
-    // ➕/➖ 핸디캡 부호(양수/음수)를 토글하는 기능이에요.
-    toggleHandySign() {
-        let val = this.playerHandyInput.value.trim();
-        if (val.startsWith('-')) {
-            this.playerHandyInput.value = val.slice(1);
-        } else if (val !== '') {
-            this.playerHandyInput.value = '-' + val;
-        } else {
-            this.playerHandyInput.value = '-';
-        }
-        this.playerHandyInput.focus();
     },
 
     // ✏️ 새로운 선수를 바구니(players)에 추가하는 기능이에요.
@@ -454,31 +435,57 @@ const app = {
         }
     },
 
-    // 🔢 커스텀 숫자 키패드: 모바일에서 음수(-)를 쉽게 입력할 수 있는 키패드예요!
+    // 🔢 커스텀 숫자 키패드: 스코어 및 핸디캡 입력을 위한 통합 키패드예요!
     _keypadState: {
+        type: 'score', // 'score' 또는 'handy'
         playerId: null,
         inputEl: null,
-        value: ''
+        title: '스코어 입력',
+        value: '',
+        onConfirm: null
     },
 
-    openKeypad(playerId, inputEl) {
-        this._keypadState.playerId = playerId;
-        this._keypadState.inputEl = inputEl;
-        this._keypadState.value = inputEl.value === '0' ? '' : inputEl.value;
-
-        // 이미 키패드가 있으면 제거하고 새로 만들어요
+    openKeypad(options, inputElParam) {
         this.closeKeypad();
+
+        // 기존 openKeypad(playerId, inputEl) 호출과 새 openKeypad({ ... }) 호출 모두 지원
+        if (typeof options === 'number' || (typeof options === 'string' && !isNaN(Number(options)))) {
+            const playerId = parseInt(options);
+            const inputEl = inputElParam;
+            this._keypadState = {
+                type: 'score',
+                playerId: playerId,
+                inputEl: inputEl,
+                title: '스코어 입력',
+                value: (inputEl && inputEl.value !== '0' && inputEl.value !== '') ? inputEl.value : '',
+                onConfirm: (val) => {
+                    const score = parseInt(val) || 0;
+                    if (inputEl) inputEl.value = score;
+                    this.updateScore(playerId, score);
+                }
+            };
+        } else {
+            const opts = options || {};
+            this._keypadState = {
+                type: opts.type || 'handy',
+                playerId: opts.playerId || null,
+                inputEl: opts.inputEl || null,
+                title: opts.title || '숫자 입력',
+                value: (opts.value !== undefined && opts.value !== null && opts.value !== '') ? String(opts.value) : '',
+                onConfirm: opts.onConfirm || null
+            };
+        }
 
         const overlay = document.createElement('div');
         overlay.id = 'keypad-overlay';
         overlay.innerHTML = `
             <div class="keypad-modal">
                 <div class="keypad-header">
-                    <span class="keypad-title">스코어 입력</span>
+                    <span class="keypad-title">${this._keypadState.title}</span>
                     <button class="keypad-close" onclick="app.closeKeypad()">✕</button>
                 </div>
                 <div class="keypad-display">
-                    <span id="keypad-value">${this._keypadState.value || '0'}</span>
+                    <span id="keypad-value" class="${this._keypadState.value.startsWith('-') ? 'negative' : ''}">${this._keypadState.value || '0'}</span>
                 </div>
                 <div class="keypad-grid">
                     <button class="keypad-btn" onclick="app.keypadInput('1')">1</button>
@@ -499,13 +506,27 @@ const app = {
         `;
         document.body.appendChild(overlay);
 
-        // 오버레이 배경 클릭 시 닫기
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) app.closeKeypad();
         });
 
-        // 부드럽게 등장하는 애니메이션
         requestAnimationFrame(() => overlay.classList.add('active'));
+    },
+
+    // 🎯 참여자 등록 시 핸디캡 입력 키패드 열기
+    openHandyKeypad(inputEl) {
+        const el = inputEl || this.playerHandyInput;
+        this.openKeypad({
+            type: 'handy',
+            inputEl: el,
+            title: '핸디캡 입력',
+            value: el ? el.value : '',
+            onConfirm: (val) => {
+                if (el) {
+                    el.value = val === '' ? '' : (parseInt(val) || 0);
+                }
+            }
+        });
     },
 
     keypadInput(num) {
@@ -543,14 +564,20 @@ const app = {
 
     keypadConfirm() {
         const val = this._keypadState.value;
-        const score = parseInt(val) || 0;
-        const inputEl = this._keypadState.inputEl;
+        if (this._keypadState.onConfirm) {
+            this._keypadState.onConfirm(val);
+        } else {
+            const score = parseInt(val) || 0;
+            const inputEl = this._keypadState.inputEl;
 
-        if (inputEl) {
-            inputEl.value = score;
+            if (inputEl) {
+                inputEl.value = score;
+            }
+
+            if (this._keypadState.playerId) {
+                this.updateScore(this._keypadState.playerId, score);
+            }
         }
-
-        this.updateScore(this._keypadState.playerId, score);
         this.closeKeypad();
     },
 
@@ -566,7 +593,6 @@ const app = {
         const display = document.getElementById('keypad-value');
         if (display) {
             display.textContent = this._keypadState.value || '0';
-            // 음수일 때 빨간색으로 표시
             display.className = this._keypadState.value.startsWith('-') ? 'negative' : '';
         }
     },

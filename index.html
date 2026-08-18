@@ -30,10 +30,7 @@
                 </div>
                 <div class="input-group">
                     <input type="text" id="player-name" placeholder="닉네임 (예: 홍길동)" maxlength="10">
-                    <div class="handy-input-wrapper">
-                        <input type="text" id="player-handy" inputmode="numeric" placeholder="핸디 (예: 18 또는 -5)" maxlength="5">
-                        <button type="button" id="toggle-handy-sign-btn" class="btn-sign-toggle" title="음수/양수 (±) 전환">±</button>
-                    </div>
+                    <input type="text" id="player-handy" class="handy-input" placeholder="핸디캡 입력 (터치)" readonly onclick="app.openHandyKeypad(this)">
                     <button id="add-player-btn" class="btn-primary">추가</button>
                 </div>
                 <div class="player-list-container">

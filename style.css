@@ -118,44 +118,13 @@ header {
     margin-bottom: 1.5rem;
 }
 
-.handy-input-wrapper {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
-.handy-input-wrapper input {
-    flex: 1;
-}
-
-.btn-sign-toggle {
-    background: var(--item-bg);
-    border: 1px solid rgba(0, 0, 0, 0.08);
-    border-radius: 12px;
-    padding: 12px 18px;
-    font-size: 1.15rem;
-    font-weight: 700;
-    color: var(--text-main);
+.handy-input {
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
-    user-select: none;
-    min-width: 52px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    -webkit-tap-highlight-color: transparent;
+    background: var(--item-bg);
 }
 
-.btn-sign-toggle:hover {
-    background: #f1f5f9;
+.handy-input:hover {
     border-color: var(--primary);
-    color: var(--primary);
-}
-
-.btn-sign-toggle:active {
-    transform: scale(0.95);
-    background: #e2e8f0;
 }
 
 input {
