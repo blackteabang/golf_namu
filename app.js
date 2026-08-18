@@ -107,16 +107,23 @@ const app = {
         this.playerNameInput.focus();
     },
 
-    // 🔘 특정 선수를 오늘 경기에 참여시킬지 말지(참여/제외) 스위치를 껐다 켜는 기능이에요.
+    // 🔘 특정 선수를 오늘 경기에 참여시킬지(참여/비참여) 설정하는 기능이에요.
+    setParticipation(id, isActive) {
+        const player = this.players.find(p => p.id === id);
+        if (player) {
+            if (isActive && !player.isActive && this.players.filter(p => p.isActive).length >= 12) {
+                return alert('최대 12명까지 참여 가능합니다.');
+            }
+            player.isActive = isActive;
+            this.saveToStorage();
+            this.renderPlayerList();
+        }
+    },
+
     toggleParticipation(id) {
         const player = this.players.find(p => p.id === id);
         if (player) {
-            if (!player.isActive && this.players.filter(p => p.isActive).length >= 12) {
-                return alert('최대 12명까지 참여 가능합니다.');
-            }
-            player.isActive = !player.isActive;
-            this.saveToStorage();
-            this.renderPlayerList();
+            this.setParticipation(id, !player.isActive);
         }
     },
 
@@ -137,11 +144,19 @@ const app = {
                     <span class="player-handy">HDCP: ${player.handy}</span>
                 </div>
                 <div class="player-actions">
-                    <button class="btn-toggle ${player.isActive ? 'active' : ''}" 
-                            onclick="app.toggleParticipation(${player.id})">
-                        ${player.isActive ? '참여' : '제외'}
-                    </button>
-                    <button class="btn-remove" onclick="app.removePlayer(${player.id})">×</button>
+                    <div class="participation-toggle-group">
+                        <button type="button" 
+                                class="btn-part ${player.isActive ? 'active' : ''}" 
+                                onclick="app.setParticipation(${player.id}, true)">
+                            참여
+                        </button>
+                        <button type="button" 
+                                class="btn-part ${!player.isActive ? 'inactive' : ''}" 
+                                onclick="app.setParticipation(${player.id}, false)">
+                            비참여
+                        </button>
+                    </div>
+                    <button class="btn-remove" title="선수 삭제" onclick="app.removePlayer(${player.id})">×</button>
                 </div>
             `;
             this.playerList.appendChild(li);

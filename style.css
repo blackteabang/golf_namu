@@ -227,22 +227,38 @@ input:focus {
     gap: 12px;
 }
 
-.btn-toggle {
-    background: #f1f5f9;
-    border: 1px solid #e2e8f0;
-    color: var(--text-muted);
-    padding: 6px 14px;
+.participation-toggle-group {
+    display: inline-flex;
+    background: #e2e8f0;
+    padding: 3px;
     border-radius: 20px;
-    font-size: 0.75rem;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-weight: 600;
+    gap: 2px;
 }
 
-.btn-toggle.active {
-    background: rgba(0, 163, 108, 0.1);
-    border-color: var(--primary-light);
-    color: var(--primary);
+.btn-part {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    padding: 4px 10px;
+    border-radius: 16px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.btn-part.active {
+    background: var(--primary);
+    color: white;
+    box-shadow: 0 2px 5px rgba(0, 163, 108, 0.3);
+}
+
+.btn-part.inactive {
+    background: #94a3b8;
+    color: white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .btn-remove {
