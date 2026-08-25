@@ -153,12 +153,24 @@ const app = {
 
     renderPlayerList() {
         this.playerList.innerHTML = '';
-        this.players.forEach((player, index) => {
+
+        // 참여자를 상단에, 비참여자를 하단에 정렬 (기존 등록 순서 유지)
+        const sortedPlayers = [...this.players].sort((a, b) => {
+            if (a.isActive === b.isActive) return 0;
+            return a.isActive ? -1 : 1;
+        });
+
+        let activeIndex = 0;
+        sortedPlayers.forEach(player => {
+            const displayName = player.isActive 
+                ? `${++activeIndex}. ${player.name}` 
+                : player.name;
+
             const li = document.createElement('li');
             li.className = `player-item ${player.isActive ? '' : 'inactive'}`;
             li.innerHTML = `
                 <div class="player-info">
-                    <span class="player-name">${index + 1}. ${player.name}</span>
+                    <span class="player-name">${displayName}</span>
                     <span class="player-handy-btn" title="클릭하여 핸디 수정" onclick="app.editPlayerHandy(${player.id})">
                         핸디: ${player.handy} <small>✏️</small>
                     </span>
