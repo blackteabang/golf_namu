@@ -88,7 +88,6 @@ const app = {
 
         if (!name) return alert('이름을 입력해주세요.');
         if (isNaN(handy)) return alert('핸디를 숫자로 입력해주세요. (예: 18 또는 -5)');
-        if (this.players.length >= 12) return alert('최대 12명까지 등록 가능합니다.');
 
         const newPlayer = {
             id: Date.now(),
@@ -111,9 +110,6 @@ const app = {
     setParticipation(id, isActive) {
         const player = this.players.find(p => p.id === id);
         if (player) {
-            if (isActive && !player.isActive && this.players.filter(p => p.isActive).length >= 12) {
-                return alert('최대 12명까지 참여 가능합니다.');
-            }
             player.isActive = isActive;
             this.saveToStorage();
             this.renderPlayerList();
@@ -133,7 +129,7 @@ const app = {
         this.renderPlayerList();
     },
 
-    // ✏️ 등록된 선수의 핸디캡을 수정하는 기능이에요.
+    // ✏️ 등록된 선수의 핸디를 수정하는 기능이에요.
     editPlayerHandy(playerId) {
         const player = this.players.find(p => p.id === playerId);
         if (!player) return;
@@ -141,7 +137,7 @@ const app = {
         this.openKeypad({
             type: 'handy',
             playerId: player.id,
-            title: `${player.name} 핸디캡 수정`,
+            title: `${player.name} 핸디 수정`,
             value: '',
             onConfirm: (val) => {
                 const handy = parseInt(val);
@@ -157,14 +153,14 @@ const app = {
 
     renderPlayerList() {
         this.playerList.innerHTML = '';
-        this.players.forEach(player => {
+        this.players.forEach((player, index) => {
             const li = document.createElement('li');
             li.className = `player-item ${player.isActive ? '' : 'inactive'}`;
             li.innerHTML = `
                 <div class="player-info">
-                    <span class="player-name">${player.name}</span>
-                    <span class="player-handy-btn" title="클릭하여 핸디캡 수정" onclick="app.editPlayerHandy(${player.id})">
-                        HDCP: ${player.handy} <small>✏️</small>
+                    <span class="player-name">${index + 1}. ${player.name}</span>
+                    <span class="player-handy-btn" title="클릭하여 핸디 수정" onclick="app.editPlayerHandy(${player.id})">
+                        핸디: ${player.handy} <small>✏️</small>
                     </span>
                 </div>
                 <div class="player-actions">
@@ -240,8 +236,8 @@ const app = {
                         </div>
                         <span class="player-name">${player.name}</span>
                         <div class="player-input-group">
-                            <span class="player-handy-badge" title="클릭하여 핸디캡 수정" onclick="app.editPlayerHandy(${player.id})">
-                                H: ${player.handy} <small>✏️</small>
+                            <span class="player-handy-badge" title="클릭하여 핸디 수정" onclick="app.editPlayerHandy(${player.id})">
+                                핸디: ${player.handy} <small>✏️</small>
                             </span>
                             <input type="text" 
                                    class="score-input" 
@@ -558,13 +554,13 @@ const app = {
         requestAnimationFrame(() => overlay.classList.add('active'));
     },
 
-    // 🎯 참여자 등록 시 핸디캡 입력 키패드 열기
+    // 🎯 참여자 등록 시 핸디 입력 키패드 열기
     openHandyKeypad(inputEl) {
         const el = inputEl || this.playerHandyInput;
         this.openKeypad({
             type: 'handy',
             inputEl: el,
-            title: '핸디캡 입력',
+            title: '핸디 입력',
             value: el ? el.value : '',
             onConfirm: (val) => {
                 if (el) {
