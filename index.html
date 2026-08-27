@@ -46,8 +46,7 @@
             <!-- Step 2: Room Assignment & Score Input -->
             <section id="step-rooms" class="glass-card">
                 <div class="section-header">
-                    <button class="btn-back" onclick="app.showStep('players')">← 이전</button>
-                    <h2>조별 경기 결과</h2>
+                    <h2 id="step-rooms-title">지금 게임중 ⛳</h2>
                     <button id="reset-rooms-btn" class="btn-back" style="color: var(--accent); font-weight: bold;">새로만들기</button>
                 </div>
                 <p class="step-guide-tip">💡 선수를 드래그(⠿)하여 다른 방으로 이동할 수 있습니다.</p>
@@ -90,7 +89,7 @@
             <!-- Step 4: Game History -->
             <section id="step-history" class="glass-card">
                 <div class="section-header">
-                    <button class="btn-back" onclick="app.showStep('players')">← 메인으로</button>
+                    <button class="btn-back" onclick="app.closeHistory()">← 돌아가기</button>
                     <h2>과거 경기 기록</h2>
                 </div>
                 <div id="history-container" class="history-list">

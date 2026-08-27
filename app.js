@@ -21,10 +21,16 @@ const app = {
         this.initServer(); // 클라우드 서버와 연결하고 최신 데이터를 불러와요.
         this.renderPlayerList(); // 화면에 선수들 이름을 예쁘게 그려줘요.
         
-        // 만약 조가 이미 짜여져 있다면 (인터넷 창을 실수로 껐다 켰을 때)
+        const savedStep = localStorage.getItem('golf_bet_current_step');
+        
+        // ⛳ 게임 중(조가 배정된 상태)일 때는 '최종 순위 보기'를 누르기 전까지 '지금 게임중' 화면을 유지해요!
         if (this.rooms && this.rooms.length > 0) {
-            this.renderRooms(); // 짜여진 조를 다시 보여주고
-            this.showStep('rooms'); // 점수 입력 화면으로 바로 넘어가요!
+            this.renderRooms();
+            if (savedStep === 'results') {
+                this.calculateRanking(false);
+            } else {
+                this.showStep('rooms'); // 게임 중 화면으로 유지!
+            }
         } else {
             this.showStep('players'); // 처음 온 거면 선수 등록 화면을 보여줘요.
         }
@@ -651,12 +657,12 @@ const app = {
     },
 
     // 🥇 최종 점수를 계산해서 1등부터 꼴찌까지 순위를 매기는 기능이에요.
-    calculateRanking() {
+    calculateRanking(askConfirm = true) {
         const activePlayers = this.players.filter(p => p.isActive);
         
         // 아직 점수를 안 적은 사람이 있는지 검사해요.
         const missingScores = activePlayers.some(p => p.score === 0);
-        if (missingScores && !confirm('입력되지 않은 스코어가 있습니다. 그대로 진행할까요?')) return;
+        if (askConfirm && missingScores && !confirm('입력되지 않은 스코어가 있습니다. 그대로 진행할까요?')) return;
 
         // Sort active players by Net Score (Gross - Handy)
         const rankedPlayers = [...activePlayers].sort((a, b) => {
@@ -667,7 +673,9 @@ const app = {
             return a.score - b.score; // Tie-breaker: original score
         });
 
-        this.saveToHistory(rankedPlayers);
+        if (askConfirm) {
+            this.saveToHistory(rankedPlayers);
+        }
         this.renderResults(rankedPlayers);
         this.showStep('results');
     },
@@ -695,8 +703,18 @@ const app = {
     },
 
     showHistory() {
+        this.previousStep = this.currentStep || (this.rooms && this.rooms.length > 0 ? 'rooms' : 'players');
         this.renderHistory();
         this.showStep('history');
+    },
+
+    closeHistory() {
+        // 게임 중(조 배정 상태)이면 지금 게임중('rooms') 화면으로 안전하게 복귀해요
+        if (this.rooms && this.rooms.length > 0 && this.previousStep !== 'results') {
+            this.showStep('rooms');
+        } else {
+            this.showStep(this.previousStep || 'players');
+        }
     },
 
     renderHistory() {
@@ -759,8 +777,12 @@ const app = {
     },
 
     showStep(stepName) {
+        this.currentStep = stepName;
+        localStorage.setItem('golf_bet_current_step', stepName);
         Object.values(this.steps).forEach(step => step.classList.remove('active'));
-        this.steps[stepName].classList.add('active');
+        if (this.steps[stepName]) {
+            this.steps[stepName].classList.add('active');
+        }
         window.scrollTo(0, 0);
     },
 
@@ -900,8 +922,13 @@ const app = {
             if (!isKeypadOpen && !isDragging) {
                 this.renderRooms();
             }
+            if (this.currentStep === 'players') {
+                this.showStep('rooms');
+            }
         } else if (changedRooms && this.rooms.length === 0) {
-            this.showStep('players');
+            if (this.currentStep === 'rooms') {
+                this.showStep('players');
+            }
         }
 
         if (changedHistory) {
