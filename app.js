@@ -656,6 +656,18 @@ const app = {
         }
     },
 
+    // 🔢 72타 기준 Net 점수 포맷팅 (예: -3, 0, +2)
+    formatNet(net) {
+        if (net === undefined || net === null || isNaN(net)) return '0';
+        net = Number(net);
+        // 과거 데이터 호환: 72가 빼지지 않은 큰 값(40 이상)인 경우 72 차감
+        if (net > 40) {
+            net = net - 72;
+        }
+        if (net > 0) return `+${net}`;
+        return `${net}`;
+    },
+
     // 🥇 최종 점수를 계산해서 1등부터 꼴찌까지 순위를 매기는 기능이에요.
     calculateRanking(askConfirm = true) {
         const activePlayers = this.players.filter(p => p.isActive);
@@ -664,10 +676,10 @@ const app = {
         const missingScores = activePlayers.some(p => p.score === 0);
         if (askConfirm && missingScores && !confirm('입력되지 않은 스코어가 있습니다. 그대로 진행할까요?')) return;
 
-        // Sort active players by Net Score (Gross - Handy)
+        // Sort active players by Net Score: (Gross - Handy - 72)
         const rankedPlayers = [...activePlayers].sort((a, b) => {
-            const netA = a.score - a.handy;
-            const netB = b.score - b.handy;
+            const netA = (a.score - a.handy) - 72;
+            const netB = (b.score - b.handy) - 72;
             
             if (netA !== netB) return netA - netB;
             return a.score - b.score; // Tie-breaker: original score
@@ -694,7 +706,7 @@ const app = {
                 name: p.name,
                 score: p.score,
                 handy: p.handy,
-                net: p.score - p.handy
+                net: (p.score - p.handy) - 72
             }))
         };
 
@@ -734,7 +746,7 @@ const app = {
                 <div class="history-player-row">
                     <span class="rank">${i + 2}위</span>
                     <span class="name">${p.name}</span>
-                    <span class="stats">G: ${p.score} | H: ${p.handy} | <span class="net">N: ${p.net}</span></span>
+                    <span class="stats">G: ${p.score} | H: ${p.handy} | <span class="net">N: ${this.formatNet(p.net)}</span></span>
                 </div>
             `).join('');
 
@@ -744,14 +756,14 @@ const app = {
                     <span class="history-round">${record.round}경기</span>
                 </div>
                 <div class="history-winner-preview">
-                    🏆 우승: <span>${winner.name}</span> (${winner.net}타)
+                    🏆 우승: <span>${winner.name}</span> (${this.formatNet(winner.net)}타)
                     <span class="toggle-icon">▼</span>
                 </div>
                 <div class="history-players-list">
                     <div class="history-player-row winner">
                         <span class="rank">1위</span>
                         <span class="name">${winner.name}</span>
-                        <span class="stats">G: ${winner.score} | H: ${winner.handy} | <span class="net">N: ${winner.net}</span></span>
+                        <span class="stats">G: ${winner.score} | H: ${winner.handy} | <span class="net">N: ${this.formatNet(winner.net)}</span></span>
                     </div>
                     ${others}
                 </div>
@@ -763,14 +775,14 @@ const app = {
     renderResults(rankedPlayers) {
         this.resultsBody.innerHTML = '';
         rankedPlayers.forEach((player, index) => {
-            const net = player.score - player.handy;
+            const net = (player.score - player.handy) - 72;
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${index + 1}</td>
                 <td>${player.name}</td>
                 <td>${player.score}</td>
                 <td>${player.handy}</td>
-                <td style="font-weight: 700; color: var(--primary-light)">${net}</td>
+                <td style="font-weight: 700; color: var(--primary-light)">${this.formatNet(net)}</td>
             `;
             this.resultsBody.appendChild(tr);
         });
