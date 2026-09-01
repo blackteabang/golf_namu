@@ -981,14 +981,14 @@ const app = {
         }
 
         if (data.history && Array.isArray(data.history)) {
-            if (JSON.stringify(this.history) !== JSON.stringify(data.history)) {
-                this.history = data.history;
-                localStorage.setItem('golf_bet_history', JSON.stringify(this.history));
+            const tempHistory = this.history;
+            this.history = data.history;
+            const migrated = this.migrateHistory();
+            
+            if (JSON.stringify(tempHistory) !== JSON.stringify(this.history)) {
                 changedHistory = true;
-                
-                // 서버에서 불러온 데이터에 구버전 기록이 섞여있다면 마이그레이션 실행
-                if (this.migrateHistory()) {
-                    // 마이그레이션이 발생하면 내부에서 다시 서버로 업데이트함
+                if (!migrated) {
+                    localStorage.setItem('golf_bet_history', JSON.stringify(this.history));
                 }
             }
         }
