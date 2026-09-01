@@ -150,7 +150,7 @@ const app = {
             id: Date.now(),
             name,
             handy,
-            score: 0,
+            score: null,
             isActive: true
         };
 
@@ -310,8 +310,8 @@ const app = {
                             </span>
                             <input type="text" 
                                    class="score-input" 
-                                   placeholder="타수" 
-                                   value="${player.score || 0}"
+                                   placeholder="입력" 
+                                   value="${(player.score !== null && player.score !== undefined && player.score !== '') ? player.score : ''}"
                                    readonly
                                    onclick="app.openKeypad(${player.id}, this)">
                         </div>
@@ -540,7 +540,7 @@ const app = {
     updateScore(playerId, score) {
         const player = this.players.find(p => p.id === playerId);
         if (player) {
-            player.score = parseInt(score) || 0; // 숫자가 아니면 0으로 저장해요
+            player.score = (score === '' || score === null || isNaN(parseInt(score))) ? null : parseInt(score);
             this.saveToStorage(); // 점수가 바뀔 때마다 잃어버리지 않게 몰래 저장해둬요!
         }
     },
@@ -569,9 +569,12 @@ const app = {
                 title: '스코어 입력',
                 value: (inputEl && inputEl.value !== '0' && inputEl.value !== '') ? inputEl.value : '',
                 onConfirm: (val) => {
-                    const score = parseInt(val) || 0;
-                    if (inputEl) inputEl.value = score;
-                    this.updateScore(playerId, score);
+                    let newScore = null;
+                    if (val !== '' && val !== null && val !== '-' && !isNaN(parseInt(val))) {
+                        newScore = parseInt(val);
+                    }
+                    if (inputEl) inputEl.value = (newScore !== null) ? newScore : '';
+                    this.updateScore(playerId, newScore);
                 }
             };
         } else {
@@ -726,7 +729,7 @@ const app = {
         const activePlayers = this.players.filter(p => p.isActive);
         
         // 아직 점수를 안 적은 사람이 있는지 검사해요.
-        const missingScores = activePlayers.some(p => p.score === 0);
+        const missingScores = activePlayers.some(p => p.score === null || p.score === undefined || p.score === '');
         if (askConfirm && missingScores && !isMidGame && !confirm('입력되지 않은 스코어가 있습니다. 그대로 진행할까요?')) return;
 
         let playersToRank = [...activePlayers];
@@ -734,8 +737,8 @@ const app = {
         // Sort active players by Score: (Handicap - (Gross - 72))
         const rankedPlayers = playersToRank.sort((a, b) => {
             if (isMidGame) {
-                const aHasScore = a.score > 0;
-                const bHasScore = b.score > 0;
+                const aHasScore = a.score !== null && a.score !== undefined && a.score !== '';
+                const bHasScore = b.score !== null && b.score !== undefined && b.score !== '';
                 if (aHasScore && !bHasScore) return -1;
                 if (!aHasScore && bHasScore) return 1;
                 if (!aHasScore && !bHasScore) return 0;
@@ -848,7 +851,7 @@ const app = {
 
         this.resultsBody.innerHTML = '';
         rankedPlayers.forEach((player, index) => {
-            const isScoreEmpty = isMidGame && player.score === 0;
+            const isScoreEmpty = isMidGame && (player.score === null || player.score === undefined || player.score === '');
             const finalScore = this.getOverPar(player.score) - player.handy;
             
             const scoreDisplay = isScoreEmpty ? '-' : player.score;
