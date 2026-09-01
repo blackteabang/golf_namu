@@ -12,13 +12,20 @@
 </head>
 <body>
     <div class="app-container">
-        <header>
-            <div class="logo">
-                <span class="icon">⛳</span>
-                <h1>싱글벙글</h1>
+        <header style="display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-bottom: 2.5rem; gap: 10px;">
+            <div style="text-align: left;">
+                <button id="reset-rooms-btn" style="background: white; border: 2px solid var(--accent); border-radius: 10px; padding: 8px 14px; font-size: 0.9rem; font-weight: 800; cursor: pointer; color: var(--accent); box-shadow: 0 2px 4px rgba(0,0,0,0.05);">새로만들기</button>
             </div>
-            <p class="subtitle">오늘도 즐거운 골프생활</p>
-            <button id="show-history-btn" class="btn-history">기록 📜</button>
+            <div style="display: flex; flex-direction: column; align-items: center;">
+                <div class="logo" style="margin: 0 0 10px 0; padding: 8px 20px;">
+                    <span class="icon">⛳</span>
+                    <h1 style="font-size: 1.8rem; margin: 0; line-height: 1.2;">싱글벙글</h1>
+                </div>
+                <p class="subtitle" style="margin: 0; font-size: 0.95rem;">오늘도 즐거운 골프생활</p>
+            </div>
+            <div style="text-align: right;">
+                <button id="show-history-btn" class="btn-history" style="position: static; margin: 0; padding: 8px 14px; font-size: 0.9rem;">기록 📜</button>
+            </div>
         </header>
 
         <main id="app-main">
@@ -46,16 +53,19 @@
             <!-- Step 2: Room Assignment & Score Input -->
             <section id="step-rooms" class="glass-card">
                 <div class="section-header">
-                    <h2 id="step-rooms-title">지금 게임중 ⛳</h2>
-                    <button id="reset-rooms-btn" class="btn-back" style="color: var(--accent); font-weight: bold;">새로만들기</button>
+                    <h2 id="step-rooms-title" style="margin: 0;">지금 게임중 ⛳</h2>
+                    <button type="button" id="save-game-btn" title="중간 내용 저장하기" style="display: flex; align-items: center; gap: 6px; background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px 12px; font-size: 0.85rem; font-weight: 700; cursor: pointer; color: var(--text-main); box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: all 0.2s ease;" onmouseover="this.style.borderColor='var(--accent)'; this.style.color='var(--accent)'" onmouseout="this.style.borderColor='#cbd5e1'; this.style.color='var(--text-main)'">
+                        <span style="font-size: 1.1rem;">💾</span> 임시저장
+                    </button>
                 </div>
                 <p class="step-guide-tip">💡 선수를 드래그(⠿)하여 다른 방으로 이동할 수 있습니다.</p>
                 <div id="rooms-container" class="rooms-grid">
                     <!-- Rooms will be generated here -->
                 </div>
-                <button type="button" id="add-room-btn" class="btn-add-room" onclick="app.addRoom()">+ 새 방 추가</button>
-                <div class="action-footer">
-                    <button id="view-results-btn" class="btn-large">최종 순위 보기</button>
+                <button type="button" id="add-room-btn" class="btn-add-room" onclick="app.addRoom()" style="display: none;">+ 새 방 추가</button>
+                <div class="action-footer" style="display: flex; gap: 10px; margin-top: 1rem;">
+                    <button id="view-mid-results-btn" class="btn-outline" style="margin-top: 0; padding: 18px; flex: 1;">중간 순위 보기</button>
+                    <button id="view-results-btn" class="btn-large" style="margin-top: 0; flex: 1;">최종 순위 보기</button>
                 </div>
             </section>
 
@@ -63,7 +73,7 @@
             <section id="step-results" class="glass-card">
                 <div class="section-header">
                     <button class="btn-back" onclick="app.showStep('rooms')">← 이전</button>
-                    <h2>최종 랭킹</h2>
+                    <h2 id="results-title">최종 랭킹</h2>
                 </div>
                 <div class="leaderboard-container">
                     <table id="leaderboard">
@@ -71,9 +81,9 @@
                             <tr>
                                 <th>순위</th>
                                 <th>이름</th>
-                                <th>Gross</th>
+                                <th>오버파</th>
                                 <th>핸디</th>
-                                <th>Net</th>
+                                <th>스코어</th>
                             </tr>
                         </thead>
                         <tbody id="results-body">

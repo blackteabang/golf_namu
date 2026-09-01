@@ -594,12 +594,23 @@ tr:nth-child(2) td:first-child { color: var(--accent); font-weight: 700; }
 tr:nth-child(3) td:first-child { color: #f59e0b; font-weight: 700; }
 
 .btn-back {
-    background: none;
-    border: none;
-    color: var(--text-muted);
+    background: #ffffff;
+    border: 2px solid var(--accent);
+    color: var(--accent);
     cursor: pointer;
-    font-size: 0.9rem;
-    font-weight: 600;
+    font-size: 1.05rem;
+    font-weight: 800;
+    padding: 8px 18px;
+    border-radius: 10px;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+}
+
+.btn-back:hover {
+    background: var(--accent);
+    color: white;
+    transform: translateX(-3px);
 }
 
 .btn-outline {

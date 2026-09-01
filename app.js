@@ -18,6 +18,7 @@ const app = {
         this.cacheDOM(); // 화면에 있는 버튼들을 자바스크립트가 기억하게 해요.
         this.bindEvents(); // 버튼을 눌렀을 때 어떤 행동을 할지 귀를 달아줘요.
         this.loadFromStorage(); // 컴퓨터 비밀창고(로컬 스토리지)에서 예전 기록을 불러와요.
+        this.migrateHistory(); // 기존 기록을 최신 스코어/순위 기준으로 업데이트해요.
         this.initServer(); // 클라우드 서버와 연결하고 최신 데이터를 불러와요.
         this.renderPlayerList(); // 화면에 선수들 이름을 예쁘게 그려줘요.
         
@@ -36,6 +37,45 @@ const app = {
         }
     },
 
+    // 🔄 예전에 저장된 기록들이 예전 계산법(Net Score)으로 되어 있다면, 새로운 스코어 계산법으로 모두 바꿔주는 마법의 기능이에요.
+    migrateHistory() {
+        let migrated = false;
+        if (this.history && this.history.length > 0) {
+            // 9월 1일 데이터 일괄 삭제 요청 처리
+            const oldLen = this.history.length;
+            this.history = this.history.filter(record => record.date !== '2026-09-01');
+            if (oldLen !== this.history.length) migrated = true;
+
+            this.history.forEach(record => {
+                let needsSort = false;
+                record.players.forEach(p => {
+                    const newScore = (p.score - 72) - p.handy;
+                    if (p.net !== newScore) {
+                        p.net = newScore;
+                        needsSort = true;
+                    }
+                });
+
+                const oldOrder = JSON.stringify(record.players.map(p => p.name));
+                record.players.sort((a, b) => {
+                    if (a.net !== b.net) return a.net - b.net; // 점수가 낮은 순
+                    return a.handy - b.handy; // 동점일 땐 핸디가 낮은(더 어려운 상황에서 친) 사람이 승리!
+                });
+                const newOrder = JSON.stringify(record.players.map(p => p.name));
+                
+                if (needsSort || oldOrder !== newOrder) {
+                    migrated = true;
+                }
+            });
+
+            if (migrated) {
+                this.saveHistoryToStorage();
+                console.log("기존 경기 기록이 새로운 스코어 및 랭킹 기준으로 업데이트되었습니다.");
+            }
+        }
+        return migrated;
+    },
+
     cacheDOM() {
         this.playerNameInput = document.getElementById('player-name');
         this.playerHandyInput = document.getElementById('player-handy');
@@ -45,7 +85,9 @@ const app = {
         this.assignRoomsBtn = document.getElementById('assign-rooms-btn');
         
         this.roomsContainer = document.getElementById('rooms-container');
+        this.viewMidResultsBtn = document.getElementById('view-mid-results-btn');
         this.viewResultsBtn = document.getElementById('view-results-btn');
+        this.saveGameBtn = document.getElementById('save-game-btn');
         this.resetRoomsBtn = document.getElementById('reset-rooms-btn');
         
         this.resultsBody = document.getElementById('results-body');
@@ -64,9 +106,18 @@ const app = {
     bindEvents() {
         this.addPlayerBtn.addEventListener('click', () => this.addPlayer());
         this.assignRoomsBtn.addEventListener('click', () => this.assignRooms());
+        if (this.viewMidResultsBtn) this.viewMidResultsBtn.addEventListener('click', () => this.calculateRanking(false, true));
         this.viewResultsBtn.addEventListener('click', () => this.calculateRanking());
         this.restartBtn.addEventListener('click', () => this.restart());
         this.showHistoryBtn.addEventListener('click', () => this.showHistory());
+
+        if (this.saveGameBtn) {
+            this.saveGameBtn.addEventListener('click', () => {
+                this.saveToStorage();
+                this.saveCurrentGameToStorage();
+                alert('⛳ 현재까지의 조 편성 및 스코어가 성공적으로 저장되었습니다!');
+            });
+        }
 
         if (this.resetRoomsBtn) {
             this.resetRoomsBtn.addEventListener('click', () => {
@@ -669,26 +720,36 @@ const app = {
     },
 
     // 🥇 최종 점수를 계산해서 1등부터 꼴찌까지 순위를 매기는 기능이에요.
-    calculateRanking(askConfirm = true) {
+    calculateRanking(askConfirm = true, isMidGame = false) {
         const activePlayers = this.players.filter(p => p.isActive);
         
         // 아직 점수를 안 적은 사람이 있는지 검사해요.
         const missingScores = activePlayers.some(p => p.score === 0);
-        if (askConfirm && missingScores && !confirm('입력되지 않은 스코어가 있습니다. 그대로 진행할까요?')) return;
+        if (askConfirm && missingScores && !isMidGame && !confirm('입력되지 않은 스코어가 있습니다. 그대로 진행할까요?')) return;
 
-        // Sort active players by Net Score: (Gross - Handy - 72)
-        const rankedPlayers = [...activePlayers].sort((a, b) => {
-            const netA = (a.score - a.handy) - 72;
-            const netB = (b.score - b.handy) - 72;
+        let playersToRank = [...activePlayers];
+
+        // Sort active players by Score: (Handicap - (Gross - 72))
+        const rankedPlayers = playersToRank.sort((a, b) => {
+            if (isMidGame) {
+                const aHasScore = a.score > 0;
+                const bHasScore = b.score > 0;
+                if (aHasScore && !bHasScore) return -1;
+                if (!aHasScore && bHasScore) return 1;
+                if (!aHasScore && !bHasScore) return 0;
+            }
+
+            const scoreA = (a.score - 72) - a.handy;
+            const scoreB = (b.score - 72) - b.handy;
             
-            if (netA !== netB) return netA - netB;
-            return a.score - b.score; // Tie-breaker: original score
+            if (scoreA !== scoreB) return scoreA - scoreB; // Lower score is better
+            return a.handy - b.handy; // Tie-breaker: original handicap - lower is better
         });
 
-        if (askConfirm) {
+        if (askConfirm && !isMidGame) {
             this.saveToHistory(rankedPlayers);
         }
-        this.renderResults(rankedPlayers);
+        this.renderResults(rankedPlayers, isMidGame);
         this.showStep('results');
     },
 
@@ -706,7 +767,7 @@ const app = {
                 name: p.name,
                 score: p.score,
                 handy: p.handy,
-                net: (p.score - p.handy) - 72
+                net: (p.score - 72) - p.handy
             }))
         };
 
@@ -746,7 +807,7 @@ const app = {
                 <div class="history-player-row">
                     <span class="rank">${i + 2}위</span>
                     <span class="name">${p.name}</span>
-                    <span class="stats">G: ${p.score} | H: ${p.handy} | <span class="net">N: ${this.formatNet(p.net)}</span></span>
+                    <span class="stats">오버파: ${p.score} | H: ${p.handy} | <span class="net">스코어: ${this.formatNet(p.net)}</span></span>
                 </div>
             `).join('');
 
@@ -756,14 +817,14 @@ const app = {
                     <span class="history-round">${record.round}경기</span>
                 </div>
                 <div class="history-winner-preview">
-                    🏆 우승: <span>${winner.name}</span> (${this.formatNet(winner.net)}타)
+                    🏆 우승: <span>${winner.name}</span> (${this.formatNet(winner.net)}점)
                     <span class="toggle-icon">▼</span>
                 </div>
                 <div class="history-players-list">
                     <div class="history-player-row winner">
                         <span class="rank">1위</span>
                         <span class="name">${winner.name}</span>
-                        <span class="stats">G: ${winner.score} | H: ${winner.handy} | <span class="net">N: ${this.formatNet(winner.net)}</span></span>
+                        <span class="stats">오버파: ${winner.score} | H: ${winner.handy} | <span class="net">스코어: ${this.formatNet(winner.net)}</span></span>
                     </div>
                     ${others}
                 </div>
@@ -772,17 +833,32 @@ const app = {
         });
     },
 
-    renderResults(rankedPlayers) {
+    renderResults(rankedPlayers, isMidGame = false) {
+        const titleEl = document.getElementById('results-title');
+        if (titleEl) {
+            titleEl.textContent = isMidGame ? '중간 랭킹' : '최종 랭킹';
+        }
+
+        const restartBtn = document.getElementById('restart-btn');
+        if (restartBtn) {
+            restartBtn.style.display = isMidGame ? 'none' : 'block';
+        }
+
         this.resultsBody.innerHTML = '';
         rankedPlayers.forEach((player, index) => {
-            const net = (player.score - player.handy) - 72;
+            const isScoreEmpty = isMidGame && player.score === 0;
+            const finalScore = (player.score - 72) - player.handy;
+            
+            const scoreDisplay = isScoreEmpty ? '-' : player.score;
+            const finalScoreDisplay = isScoreEmpty ? '-' : this.formatNet(finalScore);
+
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${index + 1}</td>
                 <td>${player.name}</td>
-                <td>${player.score}</td>
+                <td>${scoreDisplay}</td>
                 <td>${player.handy}</td>
-                <td style="font-weight: 700; color: var(--primary-light)">${this.formatNet(net)}</td>
+                <td style="font-weight: 700; color: var(--primary-light)">${finalScoreDisplay}</td>
             `;
             this.resultsBody.appendChild(tr);
         });
@@ -907,6 +983,11 @@ const app = {
                 this.history = data.history;
                 localStorage.setItem('golf_bet_history', JSON.stringify(this.history));
                 changedHistory = true;
+                
+                // 서버에서 불러온 데이터에 구버전 기록이 섞여있다면 마이그레이션 실행
+                if (this.migrateHistory()) {
+                    // 마이그레이션이 발생하면 내부에서 다시 서버로 업데이트함
+                }
             }
         }
 
