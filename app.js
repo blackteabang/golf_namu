@@ -1010,7 +1010,7 @@ const app = {
                 localStorage.setItem('golf_bet_current_rooms', JSON.stringify(this.rooms));
                 changedRooms = true;
             }
-        } else if (data.rooms && data.rooms.length === 0 && this.rooms.length > 0) {
+        } else if ((!data.rooms || data.rooms.length === 0) && this.rooms.length > 0) {
             this.rooms = [];
             localStorage.setItem('golf_bet_current_rooms', JSON.stringify(this.rooms));
             changedRooms = true;
