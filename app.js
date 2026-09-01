@@ -150,7 +150,7 @@ const app = {
             id: Date.now(),
             name,
             handy,
-            score: null,
+            score: 0,
             isActive: true
         };
 
@@ -310,8 +310,8 @@ const app = {
                             </span>
                             <input type="text" 
                                    class="score-input" 
-                                   placeholder="입력" 
-                                   value="${(player.score !== null && player.score !== undefined && player.score !== '') ? player.score : ''}"
+                                   placeholder="타수" 
+                                   value="${player.score || 0}"
                                    readonly
                                    onclick="app.openKeypad(${player.id}, this)">
                         </div>
@@ -540,7 +540,7 @@ const app = {
     updateScore(playerId, score) {
         const player = this.players.find(p => p.id === playerId);
         if (player) {
-            player.score = (score === '' || score === null || isNaN(parseInt(score))) ? null : parseInt(score);
+            player.score = parseInt(score) || 0; // 숫자가 아니면 0으로 저장해요
             this.saveToStorage(); // 점수가 바뀔 때마다 잃어버리지 않게 몰래 저장해둬요!
         }
     },
@@ -569,12 +569,9 @@ const app = {
                 title: '스코어 입력',
                 value: (inputEl && inputEl.value !== '0' && inputEl.value !== '') ? inputEl.value : '',
                 onConfirm: (val) => {
-                    let newScore = null;
-                    if (val !== '' && val !== null && val !== '-' && !isNaN(parseInt(val))) {
-                        newScore = parseInt(val);
-                    }
-                    if (inputEl) inputEl.value = (newScore !== null) ? newScore : '';
-                    this.updateScore(playerId, newScore);
+                    const score = parseInt(val) || 0;
+                    if (inputEl) inputEl.value = score;
+                    this.updateScore(playerId, score);
                 }
             };
         } else {
@@ -729,7 +726,7 @@ const app = {
         const activePlayers = this.players.filter(p => p.isActive);
         
         // 아직 점수를 안 적은 사람이 있는지 검사해요.
-        const missingScores = activePlayers.some(p => p.score === null || p.score === undefined || p.score === '');
+        const missingScores = activePlayers.some(p => p.score === 0);
         if (askConfirm && missingScores && !isMidGame && !confirm('입력되지 않은 스코어가 있습니다. 그대로 진행할까요?')) return;
 
         let playersToRank = [...activePlayers];
@@ -737,8 +734,8 @@ const app = {
         // Sort active players by Score: (Handicap - (Gross - 72))
         const rankedPlayers = playersToRank.sort((a, b) => {
             if (isMidGame) {
-                const aHasScore = a.score !== null && a.score !== undefined && a.score !== '';
-                const bHasScore = b.score !== null && b.score !== undefined && b.score !== '';
+                const aHasScore = a.score > 0;
+                const bHasScore = b.score > 0;
                 if (aHasScore && !bHasScore) return -1;
                 if (!aHasScore && bHasScore) return 1;
                 if (!aHasScore && !bHasScore) return 0;
@@ -804,7 +801,8 @@ const app = {
 
         this.history.forEach(record => {
             const div = document.createElement('div');
-            div.className = 'history-item';
+            div.className = 'history-item expanded';
+            div.onclick = () => div.classList.toggle('expanded');
             
             const winner = record.players[0];
             const others = record.players.slice(1).map((p, i) => `
@@ -816,17 +814,15 @@ const app = {
             `).join('');
 
             div.innerHTML = `
-                <div class="history-header" style="cursor: pointer;">
-                    <div class="history-date-header">
-                        <span class="history-date">${record.date}</span>
-                        <span class="history-round">${record.round}경기</span>
-                    </div>
-                    <div class="history-winner-preview">
-                        🏆 우승: <span>${winner.name}</span> (${this.formatNet(winner.net)}점)
-                        <span class="toggle-icon">▼</span>
-                    </div>
+                <div class="history-date-header">
+                    <span class="history-date">${record.date}</span>
+                    <span class="history-round">${record.round}경기</span>
                 </div>
-                <div class="history-players-list" onclick="event.stopPropagation()">
+                <div class="history-winner-preview">
+                    🏆 우승: <span>${winner.name}</span> (${this.formatNet(winner.net)}점)
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="history-players-list">
                     <div class="history-player-row winner">
                         <span class="rank">1위</span>
                         <span class="name">${winner.name}</span>
@@ -835,10 +831,6 @@ const app = {
                     ${others}
                 </div>
             `;
-            
-            // 헤더 영역(날짜 및 우승자 요약)을 클릭했을 때만 열리고 닫히도록 설정
-            div.querySelector('.history-header').onclick = () => div.classList.toggle('expanded');
-            
             this.historyContainer.appendChild(div);
         });
     },
@@ -856,7 +848,7 @@ const app = {
 
         this.resultsBody.innerHTML = '';
         rankedPlayers.forEach((player, index) => {
-            const isScoreEmpty = isMidGame && (player.score === null || player.score === undefined || player.score === '');
+            const isScoreEmpty = isMidGame && player.score === 0;
             const finalScore = this.getOverPar(player.score) - player.handy;
             
             const scoreDisplay = isScoreEmpty ? '-' : player.score;
@@ -976,23 +968,12 @@ const app = {
 
     handleServerData(data) {
         if (!data) return;
-        
-        // 완벽한 최적화: 서버 업데이트 시간이 마지막 동기화 시간과 완전히 동일하면 즉시 종료 (무한 루프/리렌더링 원천 차단)
-        if (data.updatedAt && this._lastUpdatedAt === data.updatedAt) {
-            return;
-        }
-        if (data.updatedAt) {
-            this._lastUpdatedAt = data.updatedAt;
-        }
-
         let changedPlayers = false;
         let changedRooms = false;
         let changedHistory = false;
 
         if (data.players && Array.isArray(data.players)) {
-            const playersStr = JSON.stringify(data.players);
-            if (this._lastPlayersStr !== playersStr) {
-                this._lastPlayersStr = playersStr;
+            if (JSON.stringify(this.players) !== JSON.stringify(data.players)) {
                 this.players = data.players;
                 localStorage.setItem('golf_bet_players', JSON.stringify(this.players));
                 changedPlayers = true;
@@ -1000,25 +981,25 @@ const app = {
         }
 
         if (data.history && Array.isArray(data.history)) {
-            const historyStr = JSON.stringify(data.history);
-            if (this._lastHistoryStr !== historyStr) {
-                this._lastHistoryStr = historyStr;
+            if (JSON.stringify(this.history) !== JSON.stringify(data.history)) {
                 this.history = data.history;
                 localStorage.setItem('golf_bet_history', JSON.stringify(this.history));
                 changedHistory = true;
+                
+                // 서버에서 불러온 데이터에 구버전 기록이 섞여있다면 마이그레이션 실행
+                if (this.migrateHistory()) {
+                    // 마이그레이션이 발생하면 내부에서 다시 서버로 업데이트함
+                }
             }
         }
 
         if (data.rooms && Array.isArray(data.rooms)) {
-            const roomsStr = JSON.stringify(data.rooms);
-            if (this._lastRoomsStr !== roomsStr) {
-                this._lastRoomsStr = roomsStr;
+            if (JSON.stringify(this.rooms) !== JSON.stringify(data.rooms)) {
                 this.rooms = data.rooms;
                 localStorage.setItem('golf_bet_current_rooms', JSON.stringify(this.rooms));
                 changedRooms = true;
             }
         } else if (data.rooms && data.rooms.length === 0 && this.rooms.length > 0) {
-            this._lastRoomsStr = JSON.stringify([]);
             this.rooms = [];
             localStorage.setItem('golf_bet_current_rooms', JSON.stringify(this.rooms));
             changedRooms = true;
