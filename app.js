@@ -979,6 +979,9 @@ const app = {
 
     handleServerData(data) {
         if (!data) return;
+        // 로컬에서 변경사항을 서버에 올린 지 3초가 지나지 않았다면(서버 딜레이 방지), 과거 데이터 덮어쓰기 무시
+        if (this.lastLocalUpdate && Date.now() - this.lastLocalUpdate < 3000) return;
+
         let changedPlayers = false;
         let changedRooms = false;
         let changedHistory = false;
@@ -1043,6 +1046,7 @@ const app = {
     },
 
     async syncWithServer() {
+        this.lastLocalUpdate = Date.now();
         const payload = {
             players: this.players,
             history: this.history,
