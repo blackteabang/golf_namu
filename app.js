@@ -981,7 +981,9 @@ const app = {
         let changedHistory = false;
 
         if (data.players && Array.isArray(data.players)) {
-            if (JSON.stringify(this.players) !== JSON.stringify(data.players)) {
+            const playersStr = JSON.stringify(data.players);
+            if (this._lastPlayersStr !== playersStr) {
+                this._lastPlayersStr = playersStr;
                 this.players = data.players;
                 localStorage.setItem('golf_bet_players', JSON.stringify(this.players));
                 changedPlayers = true;
@@ -989,7 +991,9 @@ const app = {
         }
 
         if (data.history && Array.isArray(data.history)) {
-            if (JSON.stringify(this.history) !== JSON.stringify(data.history)) {
+            const historyStr = JSON.stringify(data.history);
+            if (this._lastHistoryStr !== historyStr) {
+                this._lastHistoryStr = historyStr;
                 this.history = data.history;
                 localStorage.setItem('golf_bet_history', JSON.stringify(this.history));
                 changedHistory = true;
@@ -1002,12 +1006,15 @@ const app = {
         }
 
         if (data.rooms && Array.isArray(data.rooms)) {
-            if (JSON.stringify(this.rooms) !== JSON.stringify(data.rooms)) {
+            const roomsStr = JSON.stringify(data.rooms);
+            if (this._lastRoomsStr !== roomsStr) {
+                this._lastRoomsStr = roomsStr;
                 this.rooms = data.rooms;
                 localStorage.setItem('golf_bet_current_rooms', JSON.stringify(this.rooms));
                 changedRooms = true;
             }
         } else if (data.rooms && data.rooms.length === 0 && this.rooms.length > 0) {
+            this._lastRoomsStr = JSON.stringify([]);
             this.rooms = [];
             localStorage.setItem('golf_bet_current_rooms', JSON.stringify(this.rooms));
             changedRooms = true;
