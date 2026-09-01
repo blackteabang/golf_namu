@@ -1026,13 +1026,13 @@ const app = {
         }
 
         if (changedRooms && this.rooms.length > 0) {
-            const isKeypadOpen = !!document.getElementById('keypad-overlay');
-            const isDragging = !!document.querySelector('.touch-drag-avatar') || !!document.querySelector('.room-player.dragging');
-            if (!isKeypadOpen && !isDragging) {
-                this.renderRooms();
-            }
-            if (this.currentStep === 'players') {
-                this.showStep('rooms');
+            // 이미 게임중 화면에 있을 때만 방 목록 갱신 (자동 화면 전환 없음)
+            if (this.currentStep === 'rooms') {
+                const isKeypadOpen = !!document.getElementById('keypad-overlay');
+                const isDragging = !!document.querySelector('.touch-drag-avatar') || !!document.querySelector('.room-player.dragging');
+                if (!isKeypadOpen && !isDragging) {
+                    this.renderRooms();
+                }
             }
         } else if (changedRooms && this.rooms.length === 0) {
             if (this.currentStep === 'rooms') {
