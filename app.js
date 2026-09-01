@@ -805,7 +805,6 @@ const app = {
         this.history.forEach(record => {
             const div = document.createElement('div');
             div.className = 'history-item';
-            div.onclick = () => div.classList.toggle('expanded');
             
             const winner = record.players[0];
             const others = record.players.slice(1).map((p, i) => `
@@ -817,15 +816,17 @@ const app = {
             `).join('');
 
             div.innerHTML = `
-                <div class="history-date-header">
-                    <span class="history-date">${record.date}</span>
-                    <span class="history-round">${record.round}경기</span>
+                <div class="history-header" style="cursor: pointer;">
+                    <div class="history-date-header">
+                        <span class="history-date">${record.date}</span>
+                        <span class="history-round">${record.round}경기</span>
+                    </div>
+                    <div class="history-winner-preview">
+                        🏆 우승: <span>${winner.name}</span> (${this.formatNet(winner.net)}점)
+                        <span class="toggle-icon">▼</span>
+                    </div>
                 </div>
-                <div class="history-winner-preview">
-                    🏆 우승: <span>${winner.name}</span> (${this.formatNet(winner.net)}점)
-                    <span class="toggle-icon">▼</span>
-                </div>
-                <div class="history-players-list">
+                <div class="history-players-list" onclick="event.stopPropagation()">
                     <div class="history-player-row winner">
                         <span class="rank">1위</span>
                         <span class="name">${winner.name}</span>
@@ -834,6 +835,10 @@ const app = {
                     ${others}
                 </div>
             `;
+            
+            // 헤더 영역(날짜 및 우승자 요약)을 클릭했을 때만 열리고 닫히도록 설정
+            div.querySelector('.history-header').onclick = () => div.classList.toggle('expanded');
+            
             this.historyContainer.appendChild(div);
         });
     },
