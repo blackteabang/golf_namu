@@ -976,6 +976,15 @@ const app = {
 
     handleServerData(data) {
         if (!data) return;
+        
+        // 완벽한 최적화: 서버 업데이트 시간이 마지막 동기화 시간과 완전히 동일하면 즉시 종료 (무한 루프/리렌더링 원천 차단)
+        if (data.updatedAt && this._lastUpdatedAt === data.updatedAt) {
+            return;
+        }
+        if (data.updatedAt) {
+            this._lastUpdatedAt = data.updatedAt;
+        }
+
         let changedPlayers = false;
         let changedRooms = false;
         let changedHistory = false;
@@ -997,11 +1006,6 @@ const app = {
                 this.history = data.history;
                 localStorage.setItem('golf_bet_history', JSON.stringify(this.history));
                 changedHistory = true;
-                
-                // 서버에서 불러온 데이터에 구버전 기록이 섞여있다면 마이그레이션 실행
-                if (this.migrateHistory()) {
-                    // 마이그레이션이 발생하면 내부에서 다시 서버로 업데이트함
-                }
             }
         }
 
