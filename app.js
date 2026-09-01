@@ -49,7 +49,7 @@ const app = {
             this.history.forEach(record => {
                 let needsSort = false;
                 record.players.forEach(p => {
-                    const newScore = (p.score - 72) - p.handy;
+                    const newScore = this.getOverPar(p.score) - p.handy;
                     if (p.net !== newScore) {
                         p.net = newScore;
                         needsSort = true;
@@ -707,14 +707,16 @@ const app = {
         }
     },
 
-    // 🔢 72타 기준 Net 점수 포맷팅 (예: -3, 0, +2)
+    // 🧮 오버파를 자동으로 감지해서 가져오는 기능 (입력값이 40을 넘으면 72타를 뺀 값을 사용)
+    getOverPar(score) {
+        if (score === 0 || score === undefined || score === null) return 0;
+        return score > 40 ? score - 72 : score;
+    },
+
+    // 🔢 스코어(오버파 - 핸디캡) 포맷팅 (예: -3, 0, +2)
     formatNet(net) {
         if (net === undefined || net === null || isNaN(net)) return '0';
         net = Number(net);
-        // 과거 데이터 호환: 72가 빼지지 않은 큰 값(40 이상)인 경우 72 차감
-        if (net > 40) {
-            net = net - 72;
-        }
         if (net > 0) return `+${net}`;
         return `${net}`;
     },
@@ -739,8 +741,8 @@ const app = {
                 if (!aHasScore && !bHasScore) return 0;
             }
 
-            const scoreA = (a.score - 72) - a.handy;
-            const scoreB = (b.score - 72) - b.handy;
+            const scoreA = this.getOverPar(a.score) - a.handy;
+            const scoreB = this.getOverPar(b.score) - b.handy;
             
             if (scoreA !== scoreB) return scoreA - scoreB; // Lower score is better
             return a.handy - b.handy; // Tie-breaker: original handicap - lower is better
@@ -767,7 +769,7 @@ const app = {
                 name: p.name,
                 score: p.score,
                 handy: p.handy,
-                net: (p.score - 72) - p.handy
+                net: this.getOverPar(p.score) - p.handy
             }))
         };
 
@@ -847,7 +849,7 @@ const app = {
         this.resultsBody.innerHTML = '';
         rankedPlayers.forEach((player, index) => {
             const isScoreEmpty = isMidGame && player.score === 0;
-            const finalScore = (player.score - 72) - player.handy;
+            const finalScore = this.getOverPar(player.score) - player.handy;
             
             const scoreDisplay = isScoreEmpty ? '-' : player.score;
             const finalScoreDisplay = isScoreEmpty ? '-' : this.formatNet(finalScore);
