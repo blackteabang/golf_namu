@@ -793,6 +793,11 @@ const app = {
     },
 
     renderHistory() {
+        const expandedIds = new Set();
+        document.querySelectorAll('.history-item.expanded').forEach(item => {
+            if (item.dataset.id) expandedIds.add(item.dataset.id);
+        });
+
         this.historyContainer.innerHTML = '';
         if (this.history.length === 0) {
             this.historyContainer.innerHTML = '<p style="text-align:center; padding: 20px; color: var(--text-muted);">저장된 기록이 없습니다.</p>';
@@ -801,7 +806,13 @@ const app = {
 
         this.history.forEach(record => {
             const div = document.createElement('div');
-            div.className = 'history-item expanded';
+            div.className = 'history-item';
+            div.dataset.id = record.id;
+            
+            if (expandedIds.has(String(record.id))) {
+                div.classList.add('expanded');
+            }
+            
             div.onclick = () => div.classList.toggle('expanded');
             
             const winner = record.players[0];
