@@ -83,6 +83,7 @@ const app = {
         this.playerList = document.getElementById('player-list');
         this.playerCountEl = document.getElementById('player-count');
         this.assignRoomsBtn = document.getElementById('assign-rooms-btn');
+        this.assignRoomsTopBtn = document.getElementById('assign-rooms-top-btn');
         
         this.roomsContainer = document.getElementById('rooms-container');
         this.viewMidResultsBtn = document.getElementById('view-mid-results-btn');
@@ -106,6 +107,7 @@ const app = {
     bindEvents() {
         this.addPlayerBtn.addEventListener('click', () => this.addPlayer());
         this.assignRoomsBtn.addEventListener('click', () => this.assignRooms());
+        if (this.assignRoomsTopBtn) this.assignRoomsTopBtn.addEventListener('click', () => this.assignRooms());
         if (this.viewMidResultsBtn) this.viewMidResultsBtn.addEventListener('click', () => this.calculateRanking(false, true));
         this.viewResultsBtn.addEventListener('click', () => this.calculateRanking());
         this.restartBtn.addEventListener('click', () => this.restart());
@@ -253,7 +255,9 @@ const app = {
 
         const activeCount = this.players.filter(p => p.isActive).length;
         this.playerCountEl.textContent = activeCount;
-        this.assignRoomsBtn.disabled = activeCount < 2; // Need at least 2 active players
+        const isAssignDisabled = activeCount < 2; // Need at least 2 active players
+        this.assignRoomsBtn.disabled = isAssignDisabled;
+        if (this.assignRoomsTopBtn) this.assignRoomsTopBtn.disabled = isAssignDisabled;
     },
 
     // 🎩 참가하는 사람들을 마구 섞어서 3명씩 무작위로 조를 짜는 마법의 기능이에요!
