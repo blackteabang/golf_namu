@@ -49,7 +49,7 @@ const app = {
             this.history.forEach(record => {
                 let needsSort = false;
                 record.players.forEach(p => {
-                    const newScore = this.getOverPar(p.score) - p.handy;
+                    const newScore = this.getNetScore(p.score, p.handy);
                     if (p.net !== newScore) {
                         p.net = newScore;
                         needsSort = true;
@@ -59,7 +59,7 @@ const app = {
                 const oldOrder = JSON.stringify(record.players.map(p => p.name));
                 record.players.sort((a, b) => {
                     if (a.net !== b.net) return a.net - b.net; // 점수가 낮은 순
-                    return a.handy - b.handy; // 동점일 땐 핸디가 낮은(더 어려운 상황에서 친) 사람이 승리!
+                    return Math.abs(a.handy) - Math.abs(b.handy); // 동점일 땐 핸디가 낮은(더 어려운 상황에서 친) 사람이 승리!
                 });
                 const newOrder = JSON.stringify(record.players.map(p => p.name));
                 
@@ -713,6 +713,13 @@ const app = {
         return score > 40 ? score - 72 : score;
     },
 
+    // 🧮 최종 스코어 계산 기능 (오버파 - 핸디캡 절대값: 음수 핸디(-3 등) 입력 시에도 3타 차감 혜택 적용)
+    getNetScore(score, handy) {
+        const overPar = this.getOverPar(score);
+        const effectiveHandy = Math.abs(Number(handy) || 0);
+        return overPar - effectiveHandy;
+    },
+
     // 🔢 스코어(오버파 - 핸디캡) 포맷팅 (예: -3, 0, +2)
     formatNet(net) {
         if (net === undefined || net === null || isNaN(net)) return '0';
@@ -731,21 +738,21 @@ const app = {
 
         let playersToRank = [...activePlayers];
 
-        // Sort active players by Score: (Handicap - (Gross - 72))
+        // Sort active players by Score
         const rankedPlayers = playersToRank.sort((a, b) => {
             if (isMidGame) {
-                const aHasScore = a.score > 0;
-                const bHasScore = b.score > 0;
+                const aHasScore = a.score !== 0 && a.score !== '' && a.score !== null && a.score !== undefined;
+                const bHasScore = b.score !== 0 && b.score !== '' && b.score !== null && b.score !== undefined;
                 if (aHasScore && !bHasScore) return -1;
                 if (!aHasScore && bHasScore) return 1;
                 if (!aHasScore && !bHasScore) return 0;
             }
 
-            const scoreA = this.getOverPar(a.score) - a.handy;
-            const scoreB = this.getOverPar(b.score) - b.handy;
+            const scoreA = this.getNetScore(a.score, a.handy);
+            const scoreB = this.getNetScore(b.score, b.handy);
             
             if (scoreA !== scoreB) return scoreA - scoreB; // Lower score is better
-            return a.handy - b.handy; // Tie-breaker: original handicap - lower is better
+            return Math.abs(a.handy) - Math.abs(b.handy); // Tie-breaker: original handicap - lower is better
         });
 
         if (askConfirm && !isMidGame) {
@@ -769,7 +776,7 @@ const app = {
                 name: p.name,
                 score: p.score,
                 handy: p.handy,
-                net: this.getOverPar(p.score) - p.handy
+                net: this.getNetScore(p.score, p.handy)
             }))
         };
 
@@ -860,7 +867,7 @@ const app = {
         this.resultsBody.innerHTML = '';
         rankedPlayers.forEach((player, index) => {
             const isScoreEmpty = isMidGame && player.score === 0;
-            const finalScore = this.getOverPar(player.score) - player.handy;
+            const finalScore = this.getNetScore(player.score, player.handy);
             
             const scoreDisplay = isScoreEmpty ? '-' : player.score;
             const finalScoreDisplay = isScoreEmpty ? '-' : this.formatNet(finalScore);
