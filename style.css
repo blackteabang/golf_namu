@@ -158,38 +158,19 @@ input:focus {
     transform: scale(0.98);
 }
 
-.input-btn-group {
+.add-player-row {
     display: flex;
-    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 2px;
 }
 
-.input-btn-group button {
-    flex: 1;
-    padding: 14px 10px;
-    font-size: 1rem;
+.btn-add-player {
+    width: auto;
+    padding: 10px 20px;
+    font-size: 0.95rem;
     font-weight: 700;
     border-radius: 12px;
-    cursor: pointer;
-    transition: transform 0.2s, opacity 0.2s, background 0.2s;
-    -webkit-tap-highlight-color: transparent;
-}
-
-.btn-assign-top {
-    background: linear-gradient(135deg, #10b981, #059669);
-    border: none;
-    color: white;
-    box-shadow: 0 4px 12px rgba(0, 163, 108, 0.2);
-}
-
-.btn-assign-top:disabled {
-    background: #cbd5e1;
-    color: #94a3b8;
-    cursor: not-allowed;
-    box-shadow: none;
-}
-
-.btn-assign-top:active:not(:disabled) {
-    transform: scale(0.98);
+    box-shadow: 0 3px 10px rgba(0, 163, 108, 0.2);
 }
 
 .btn-large {
