@@ -150,7 +150,7 @@ const app = {
             id: Date.now(),
             name,
             handy,
-            score: 0,
+            score: null,
             isActive: true
         };
 
@@ -260,8 +260,8 @@ const app = {
     assignRooms() {
         const activePlayers = this.players.filter(p => p.isActive);
         
-        // 새 게임을 시작하니까 모든 사람의 점수를 0점으로 초기화해요.
-        activePlayers.forEach(p => p.score = 0);
+        // 새 게임을 시작하니까 모든 사람의 점수를 미입력(null) 상태로 초기화해요.
+        activePlayers.forEach(p => p.score = null);
         
         // 사람들을 무작위로 마구마구 섞어요! (Shuffle)
         const shuffled = [...activePlayers].sort(() => Math.random() - 0.5);
@@ -311,7 +311,7 @@ const app = {
                             <input type="text" 
                                    class="score-input" 
                                    placeholder="타수" 
-                                   value="${player.score || 0}"
+                                   value="${this.hasScore(player) ? player.score : ''}"
                                    readonly
                                    onclick="app.openKeypad(${player.id}, this)">
                         </div>
@@ -540,9 +540,14 @@ const app = {
     updateScore(playerId, score) {
         const player = this.players.find(p => p.id === playerId);
         if (player) {
-            player.score = parseInt(score) || 0; // 숫자가 아니면 0으로 저장해요
+            player.score = (score === null || score === undefined || score === '' || isNaN(score)) ? null : parseInt(score, 10);
             this.saveToStorage(); // 점수가 바뀔 때마다 잃어버리지 않게 몰래 저장해둬요!
         }
+    },
+
+    // ⛳ 스코어가 실제로 입력되었는지 확인하는 헬퍼 (0도 유효한 이븐파 스코어이므로 null/undefined/빈값만 미입력으로 처리)
+    hasScore(player) {
+        return !!(player && player.score !== null && player.score !== undefined && player.score !== '' && !isNaN(player.score));
     },
 
     // 🔢 커스텀 숫자 키패드: 스코어 및 핸디캡 입력을 위한 통합 키패드예요!
@@ -562,15 +567,18 @@ const app = {
         if (typeof options === 'number' || (typeof options === 'string' && !isNaN(Number(options)))) {
             const playerId = parseInt(options);
             const inputEl = inputElParam;
+            const player = this.players.find(p => p.id === playerId);
+            const currentScore = this.hasScore(player) ? String(player.score) : '';
             this._keypadState = {
                 type: 'score',
                 playerId: playerId,
                 inputEl: inputEl,
-                title: '스코어 입력',
-                value: (inputEl && inputEl.value !== '0' && inputEl.value !== '') ? inputEl.value : '',
+                title: player ? `${player.name} 스코어 입력` : '스코어 입력',
+                value: currentScore,
                 onConfirm: (val) => {
-                    const score = parseInt(val) || 0;
-                    if (inputEl) inputEl.value = score;
+                    const trimmed = String(val !== undefined && val !== null ? val : '').trim();
+                    const score = (trimmed === '' || isNaN(parseInt(trimmed, 10))) ? null : parseInt(trimmed, 10);
+                    if (inputEl) inputEl.value = score !== null ? score : '';
                     this.updateScore(playerId, score);
                 }
             };
@@ -645,9 +653,14 @@ const app = {
         const digits = isNegative ? val.slice(1) : val;
 
         // 최대 3자리까지만 입력 가능 (예: 999, -999)
-        if (digits.length >= 3) return;
+        if (digits.length >= 3 && digits !== '0') return;
 
-        const newDigits = digits + num;
+        let newDigits;
+        if (digits === '0') {
+            newDigits = num;
+        } else {
+            newDigits = digits + num;
+        }
         this._keypadState.value = (isNegative ? '-' : '') + newDigits;
         this._updateKeypadDisplay();
     },
@@ -677,11 +690,12 @@ const app = {
         if (this._keypadState.onConfirm) {
             this._keypadState.onConfirm(val);
         } else {
-            const score = parseInt(val) || 0;
+            const trimmed = String(val !== undefined && val !== null ? val : '').trim();
+            const score = (trimmed === '' || isNaN(parseInt(trimmed, 10))) ? null : parseInt(trimmed, 10);
             const inputEl = this._keypadState.inputEl;
 
             if (inputEl) {
-                inputEl.value = score;
+                inputEl.value = score !== null ? score : '';
             }
 
             if (this._keypadState.playerId) {
@@ -709,8 +723,9 @@ const app = {
 
     // 🧮 오버파를 자동으로 감지해서 가져오는 기능 (입력값이 40을 넘으면 72타를 뺀 값을 사용)
     getOverPar(score) {
-        if (score === 0 || score === undefined || score === null) return 0;
-        return score > 40 ? score - 72 : score;
+        if (score === undefined || score === null || score === '' || isNaN(score)) return 0;
+        const num = Number(score);
+        return num > 40 ? num - 72 : num;
     },
 
     // 🧮 최종 스코어 계산 기능 (오버파 - 핸디캡 절대값: 음수 핸디(-3 등) 입력 시에도 3타 차감 혜택 적용)
@@ -732,8 +747,8 @@ const app = {
     calculateRanking(askConfirm = true, isMidGame = false) {
         const activePlayers = this.players.filter(p => p.isActive);
         
-        // 아직 점수를 안 적은 사람이 있는지 검사해요.
-        const missingScores = activePlayers.some(p => p.score === 0);
+        // 아직 점수를 안 적은 사람이 있는지 검사해요. (0타는 유효한 이븐파 스코어이므로 제외)
+        const missingScores = activePlayers.some(p => !this.hasScore(p));
         if (askConfirm && missingScores && !isMidGame && !confirm('입력되지 않은 스코어가 있습니다. 그대로 진행할까요?')) return;
 
         let playersToRank = [...activePlayers];
@@ -741,8 +756,8 @@ const app = {
         // Sort active players by Score
         const rankedPlayers = playersToRank.sort((a, b) => {
             if (isMidGame) {
-                const aHasScore = a.score !== 0 && a.score !== '' && a.score !== null && a.score !== undefined;
-                const bHasScore = b.score !== 0 && b.score !== '' && b.score !== null && b.score !== undefined;
+                const aHasScore = this.hasScore(a);
+                const bHasScore = this.hasScore(b);
                 if (aHasScore && !bHasScore) return -1;
                 if (!aHasScore && bHasScore) return 1;
                 if (!aHasScore && !bHasScore) return 0;
@@ -774,7 +789,7 @@ const app = {
             round: round,
             players: rankedPlayers.map(p => ({
                 name: p.name,
-                score: p.score,
+                score: this.hasScore(p) ? p.score : 0,
                 handy: p.handy,
                 net: this.getNetScore(p.score, p.handy)
             }))
@@ -866,11 +881,11 @@ const app = {
 
         this.resultsBody.innerHTML = '';
         rankedPlayers.forEach((player, index) => {
-            const isScoreEmpty = isMidGame && player.score === 0;
+            const isScoreEmpty = !this.hasScore(player);
             const finalScore = this.getNetScore(player.score, player.handy);
             
             const scoreDisplay = isScoreEmpty ? '-' : player.score;
-            const finalScoreDisplay = isScoreEmpty ? '-' : this.formatNet(finalScore);
+            const finalScoreDisplay = (isMidGame && isScoreEmpty) ? '-' : this.formatNet(finalScore);
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
@@ -1249,7 +1264,7 @@ const app = {
     restart() {
         if (confirm('현재 게임 결과를 기록하고 새로운 게임을 시작하시겠습니까? (등록된 인원은 유지됩니다)')) {
             // 선수들 명단은 놔두고, 점수랑 조 편성만 백지상태로 만들어요.
-            this.players.forEach(p => p.score = 0);
+            this.players.forEach(p => p.score = null);
             this.rooms = [];
             this.saveCurrentGameToStorage();
             this.saveToStorage();
