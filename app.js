@@ -59,7 +59,7 @@ const app = {
                 const oldOrder = JSON.stringify(record.players.map(p => p.name));
                 record.players.sort((a, b) => {
                     if (a.net !== b.net) return a.net - b.net; // 점수가 낮은 순
-                    return Math.abs(a.handy) - Math.abs(b.handy); // 동점일 땐 핸디가 낮은(더 어려운 상황에서 친) 사람이 승리!
+                    return this.parseHandicap(a.handy) - this.parseHandicap(b.handy); // 동점일 땐 핸디가 낮은 사람이 승리
                 });
                 const newOrder = JSON.stringify(record.players.map(p => p.name));
                 
@@ -547,7 +547,7 @@ const app = {
 
     // ⛳ 스코어가 실제로 입력되었는지 확인하는 헬퍼 (0도 유효한 이븐파 스코어이므로 null/undefined/빈값만 미입력으로 처리)
     hasScore(player) {
-        return !!(player && player.score !== null && player.score !== undefined && player.score !== '' && !isNaN(player.score));
+        return GolfScore.hasScore(player);
     },
 
     // 🔢 커스텀 숫자 키패드: 스코어 및 핸디캡 입력을 위한 통합 키패드예요!
@@ -723,24 +723,21 @@ const app = {
 
     // 🧮 오버파를 자동으로 감지해서 가져오는 기능 (입력값이 40을 넘으면 72타를 뺀 값을 사용)
     getOverPar(score) {
-        if (score === undefined || score === null || score === '' || isNaN(score)) return 0;
-        const num = Number(score);
-        return num > 40 ? num - 72 : num;
+        return GolfScore.getOverPar(score);
     },
 
-    // 🧮 최종 스코어 계산 기능 (오버파 - 핸디캡 절대값: 음수 핸디(-3 등) 입력 시에도 3타 차감 혜택 적용)
+    parseHandicap(handy) {
+        return GolfScore.parseHandicap(handy);
+    },
+
+    // 🧮 스코어 = 오늘 오버파 - 핸디캡 (음수 핸디도 부호 그대로 적용. 예: 2 - (-4) = 6)
     getNetScore(score, handy) {
-        const overPar = this.getOverPar(score);
-        const effectiveHandy = Math.abs(Number(handy) || 0);
-        return overPar - effectiveHandy;
+        return GolfScore.getNetScore(score, handy);
     },
 
     // 🔢 스코어(오버파 - 핸디캡) 포맷팅 (예: -3, 0, +2)
     formatNet(net) {
-        if (net === undefined || net === null || isNaN(net)) return '0';
-        net = Number(net);
-        if (net > 0) return `+${net}`;
-        return `${net}`;
+        return GolfScore.formatNet(net);
     },
 
     // 🥇 최종 점수를 계산해서 1등부터 꼴찌까지 순위를 매기는 기능이에요.
@@ -753,22 +750,8 @@ const app = {
 
         let playersToRank = [...activePlayers];
 
-        // Sort active players by Score
-        const rankedPlayers = playersToRank.sort((a, b) => {
-            if (isMidGame) {
-                const aHasScore = this.hasScore(a);
-                const bHasScore = this.hasScore(b);
-                if (aHasScore && !bHasScore) return -1;
-                if (!aHasScore && bHasScore) return 1;
-                if (!aHasScore && !bHasScore) return 0;
-            }
-
-            const scoreA = this.getNetScore(a.score, a.handy);
-            const scoreB = this.getNetScore(b.score, b.handy);
-            
-            if (scoreA !== scoreB) return scoreA - scoreB; // Lower score is better
-            return Math.abs(a.handy) - Math.abs(b.handy); // Tie-breaker: original handicap - lower is better
-        });
+        // Sort active players by Score (오늘 오버파 - 핸디캡, 낮을수록 승리)
+        const rankedPlayers = playersToRank.sort((a, b) => GolfScore.compareRank(a, b, isMidGame));
 
         if (askConfirm && !isMidGame) {
             this.saveToHistory(rankedPlayers);

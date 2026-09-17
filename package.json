@@ -5,7 +5,8 @@
   "description": "Premium Golf Betting Manager",
   "main": "index.html",
   "scripts": {
-    "start": "serve ."
+    "start": "serve .",
+    "test": "node score.test.mjs"
   },
   "dependencies": {
     "@vercel/kv": "^1.0.1"
