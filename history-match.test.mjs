@@ -15,6 +15,7 @@ assert.ok(GolfHistory, 'GolfHistory should load');
 
 const {
     MATCH_WINDOW_MS,
+    COLLAPSE_WINDOW_MS,
     localDateString,
     upsertHistory,
     collapseStoredDuplicates
@@ -39,6 +40,7 @@ const prev = new Date(2026, 8, 30, 9, 0, 0, 0).getTime();
 const prevDate = localDateString(prev);
 
 assert.equal(MATCH_WINDOW_MS, 3 * 60 * 60 * 1000);
+assert.equal(COLLAPSE_WINDOW_MS, 4 * 60 * 60 * 1000);
 
 // 첫 저장은 새 기록
 let result = upsertHistory([], players(2), {
@@ -188,7 +190,7 @@ const laterGame = result.history.find(h => h.sessionId === 'sess-later');
 assert.equal(laterGame.players.find(p => p.name === '민수').score, 11);
 assert.equal(laterGame.round, 2);
 
-// 저장본 정리: 내용이 완전히 같은 중복과 같은 세션 중복만 제거하고, 점수가 다른 경기는 남긴다
+// 저장본 정리: 같은 날·같은 참가자·가까운 시간은 점수가 달라도 최신 한 줄
 const stored = collapseStoredDuplicates([
     { id: morning, date: today, round: 1, players: players(2) },
     { id: morning + 1000, date: today, round: 2, players: players(2) },
@@ -201,16 +203,78 @@ assert.equal(stored.changed, true);
 assert.equal(stored.history.filter(h => h.date === prevDate).length, 1);
 assert.equal(stored.history.filter(h => h.sessionId === 'sess-b').length, 1);
 assert.equal(stored.history.find(h => h.sessionId === 'sess-b').players.find(p => p.name === '민수').score, 10);
-assert.equal(stored.history.filter(h => !h.sessionId && h.date === today).length, 2);
+assert.equal(stored.history.filter(h => !h.sessionId && h.date === today).length, 1);
+assert.equal(stored.history.find(h => !h.sessionId && h.date === today).players.find(p => p.name === '민수').score, 4);
 assert.equal(stored.history.find(h => h.date === prevDate).round, 1);
 
-// 세션이 다른 동일 스코어는 지우지 않는다
+// 2026-09-30 같은 멤버 세 줄(점수는 서로 다름)은 가장 최근 한 줄만 남긴다
+const sep30 = '2026-09-30';
+const sep30Start = new Date(2026, 8, 30, 10, 0, 0, 0).getTime();
+const sep29 = new Date(2026, 8, 29, 10, 0, 0, 0).getTime();
+const sep29Date = localDateString(sep29);
+const sep30Cleaned = collapseStoredDuplicates([
+    { id: sep30Start, date: sep30, round: 1, players: players(2) },
+    { id: sep30Start + 50 * 60 * 1000, date: sep30, round: 2, players: players(5) },
+    { id: sep30Start + 100 * 60 * 1000, savedAt: sep30Start + 100 * 60 * 1000, date: sep30, round: 3, players: players(9) },
+    { id: sep29, date: sep29Date, round: 1, players: players(2) },
+    {
+        id: sep30Start + 20 * 60 * 1000,
+        date: sep30,
+        round: 1,
+        players: [{ name: '철수', score: 3, handy: 1, net: 2 }, { name: '영희', score: 4, handy: 8, net: -4 }]
+    }
+]);
+assert.equal(sep30Cleaned.changed, true);
+const sep30SameRoster = sep30Cleaned.history.filter(h => h.date === sep30 && h.players.some(p => p.name === '민수'));
+assert.equal(sep30SameRoster.length, 1);
+assert.equal(sep30SameRoster[0].id, sep30Start + 100 * 60 * 1000);
+assert.equal(sep30SameRoster[0].players.find(p => p.name === '민수').score, 9);
+assert.equal(sep30SameRoster[0].round, 2);
+assert.equal(sep30Cleaned.history.filter(h => h.date === sep29Date).length, 1);
+assert.equal(sep30Cleaned.history.find(h => h.date === sep29Date).players.find(p => p.name === '민수').score, 2);
+assert.equal(sep30Cleaned.history.filter(h => h.players.some(p => p.name === '철수')).length, 1);
+
+// 3시간 반 차이는 한 경기로 보고, 5시간 차이(아침/저녁)는 따로 둔다
+const withinWiden = collapseStoredDuplicates([
+    { id: sep30Start, date: sep30, round: 1, players: players(1) },
+    { id: sep30Start + 3.5 * 60 * 60 * 1000, date: sep30, round: 2, players: players(7) }
+]);
+assert.equal(withinWiden.history.length, 1);
+assert.equal(withinWiden.history[0].players.find(p => p.name === '민수').score, 7);
+
+const morningAndEvening = collapseStoredDuplicates([
+    { id: sep30Start, date: sep30, round: 1, players: players(1) },
+    { id: sep30Start + 5 * 60 * 60 * 1000, date: sep30, round: 2, players: players(7) }
+]);
+assert.equal(morningAndEvening.changed, false);
+assert.equal(morningAndEvening.history.length, 2);
+
+// savedAt이 더 최근이면 id가 더 작아도 그 점수를 남긴다
+const bySavedAt = collapseStoredDuplicates([
+    { id: sep30Start + 2 * 60 * 60 * 1000, savedAt: sep30Start, date: sep30, round: 2, players: players(1) },
+    { id: sep30Start, savedAt: sep30Start + 2 * 60 * 60 * 1000, date: sep30, round: 1, players: players(9) }
+]);
+assert.equal(bySavedAt.history.length, 1);
+assert.equal(bySavedAt.history[0].id, sep30Start);
+assert.equal(bySavedAt.history[0].players.find(p => p.name === '민수').score, 9);
+
+// 세션이 달라도 같은 멤버·가까운 시간이면 최신 한 줄로 합친다
 const distinctSessions = collapseStoredDuplicates([
     { id: morning, date: today, round: 1, sessionId: 'sess-a', players: players(2) },
-    { id: soon, date: today, round: 2, sessionId: 'sess-b', players: players(2) }
+    { id: soon, date: today, round: 2, sessionId: 'sess-b', players: players(3) }
 ]);
-assert.equal(distinctSessions.changed, false);
-assert.equal(distinctSessions.history.length, 2);
+assert.equal(distinctSessions.changed, true);
+assert.equal(distinctSessions.history.length, 1);
+assert.equal(distinctSessions.history[0].sessionId, 'sess-b');
+assert.equal(distinctSessions.history[0].players.find(p => p.name === '민수').score, 3);
+
+// 세션이 달라도 5시간 이상 떨어지면 아침/저녁 경기로 따로 둔다
+const separateSessions = collapseStoredDuplicates([
+    { id: morning, date: today, round: 1, sessionId: 'sess-a', players: players(2) },
+    { id: afternoon, date: today, round: 2, sessionId: 'sess-b', players: players(8) }
+]);
+assert.equal(separateSessions.changed, false);
+assert.equal(separateSessions.history.length, 2);
 
 // 이미 세션이 있는 경기를 다시 저장해도, 근처에 있는 다른 예전 경기는 남긴다
 const sessioned = [{
