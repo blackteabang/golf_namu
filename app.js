@@ -68,6 +68,14 @@ const app = {
                 }
             });
 
+            if (typeof GolfHistory !== 'undefined' && GolfHistory.collapseStoredDuplicates) {
+                const collapsed = GolfHistory.collapseStoredDuplicates(this.history);
+                if (collapsed.changed) {
+                    this.history = collapsed.history;
+                    migrated = true;
+                }
+            }
+
             if (migrated) {
                 this.saveHistoryToStorage();
                 console.log("기존 경기 기록이 새로운 스코어 및 랭킹 기준으로 업데이트되었습니다.");
@@ -123,6 +131,7 @@ const app = {
             this.resetRoomsBtn.addEventListener('click', () => {
                 if (confirm('조 편성을 초기화하고 처음부터 다시 시작하시겠습니까?')) {
                     this.rooms = [];
+                    this.clearGameSession();
                     this.saveCurrentGameToStorage();
                     this.showStep('players');
                 }
@@ -259,6 +268,9 @@ const app = {
     // 🎩 참가하는 사람들을 마구 섞어서 3명씩 무작위로 조를 짜는 마법의 기능이에요!
     assignRooms() {
         const activePlayers = this.players.filter(p => p.isActive);
+
+        // 조를 새로 짜면 이전 경기와 다른 세션이다. 직전 기록을 덮어쓰지 않는다.
+        this.startNewGameSession();
         
         // 새 게임을 시작하니까 모든 사람의 점수를 미입력(null) 상태로 초기화해요.
         activePlayers.forEach(p => p.score = null);
@@ -760,25 +772,28 @@ const app = {
         this.showStep('results');
     },
 
-    // 📸 경기가 완전히 끝나면 오늘의 결과를 영원히 기억하도록 '과거 기록'에 저장해요.
+    // 📸 최종 순위를 기록해요.
+    // 같은 경기를 점수만 고쳐 다시 저장하면 새 줄을 쌓지 않고, 그 경기 기록을 갱신해요.
+    // - 이 경기의 세션 아이디가 이미 있으면 그 기록을 덮어써요. (시간이 몇 시간 지나도 같은 경기)
+    // - 세션이 없는 예전 기록은 '같은 로컬 날짜 + 저장 시각 3시간 이내 + 같은 참가자'일 때만 갱신해요.
+    // - 조를 새로 짠 경기(다른 세션)와 다른 날 기록은 그대로 두어요.
     saveToHistory(rankedPlayers) {
-        const today = new Date().toISOString().split('T')[0];
-        const todayGames = this.history.filter(h => h.date === today);
-        const round = todayGames.length + 1; // 오늘 몇 번째 경기인지 세어요.
+        const now = Date.now();
+        const sessionId = this.ensureGameSessionId();
+        const snapshot = rankedPlayers.map(p => ({
+            name: p.name,
+            score: this.hasScore(p) ? p.score : 0,
+            handy: p.handy,
+            net: this.getNetScore(p.score, p.handy)
+        }));
 
-        const record = {
-            id: Date.now(),
-            date: today,
-            round: round,
-            players: rankedPlayers.map(p => ({
-                name: p.name,
-                score: this.hasScore(p) ? p.score : 0,
-                handy: p.handy,
-                net: this.getNetScore(p.score, p.handy)
-            }))
-        };
-
-        this.history.unshift(record); // Add to beginning
+        const result = GolfHistory.upsertHistory(this.history, snapshot, {
+            sessionId,
+            now,
+            // 'new'는 방금 조를 새로 짠 경기다. 직전 기록을 시간 창으로 덮어쓰지 않는다.
+            allowTimeMatch: this.gameSessionOrigin !== 'new'
+        });
+        this.history = result.history;
         this.saveHistoryToStorage();
     },
 
@@ -906,6 +921,40 @@ const app = {
     saveHistoryToStorage() {
         localStorage.setItem('golf_bet_history', JSON.stringify(this.history));
         this.syncWithServer();
+    },
+
+    // 현재 경기 세션. 새로고침 후에도 같은 경기를 다시 저장하면 같은 기록으로 연결해요.
+    saveGameSession() {
+        if (this.gameSessionId) {
+            localStorage.setItem('golf_bet_game_session', this.gameSessionId);
+            localStorage.setItem('golf_bet_game_session_origin', this.gameSessionOrigin || '');
+        }
+    },
+
+    startNewGameSession() {
+        this.gameSessionId = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        this.gameSessionOrigin = 'new';
+        this.saveGameSession();
+    },
+
+    continueGameSession() {
+        this.gameSessionId = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        this.gameSessionOrigin = 'continued';
+        this.saveGameSession();
+    },
+
+    clearGameSession() {
+        this.gameSessionId = '';
+        this.gameSessionOrigin = '';
+        localStorage.removeItem('golf_bet_game_session');
+        localStorage.removeItem('golf_bet_game_session_origin');
+    },
+
+    ensureGameSessionId() {
+        if (this.gameSessionId) return this.gameSessionId;
+        if (this.rooms && this.rooms.length > 0) this.continueGameSession();
+        else this.startNewGameSession();
+        return this.gameSessionId;
     },
 
     // ☁️ Firebase Realtime Database 서버 초기화 및 실시간 동기화
@@ -1241,6 +1290,13 @@ const app = {
             // 옛날 버전과 호환되도록 아이디(ID)만 깔끔하게 빼와요.
             this.rooms = this.rooms.map(room => room.map(p => typeof p === 'object' ? p.id : p));
         }
+
+        this.gameSessionId = localStorage.getItem('golf_bet_game_session') || '';
+        this.gameSessionOrigin = localStorage.getItem('golf_bet_game_session_origin') || '';
+        // 이 업데이트 전에 진행 중이던 경기는 세션이 없다. 이어서 저장할 수 있게 하나 만들어요.
+        if (!this.gameSessionId && this.rooms && this.rooms.length > 0) {
+            this.continueGameSession();
+        }
     },
 
     // 🔄 모든 걸 지우고 완전히 처음부터 새 게임을 시작하는 버튼이에요!
@@ -1249,6 +1305,7 @@ const app = {
             // 선수들 명단은 놔두고, 점수랑 조 편성만 백지상태로 만들어요.
             this.players.forEach(p => p.score = null);
             this.rooms = [];
+            this.clearGameSession();
             this.saveCurrentGameToStorage();
             this.saveToStorage();
             this.renderPlayerList();
