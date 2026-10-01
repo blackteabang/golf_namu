@@ -4,11 +4,15 @@
 // 1) 세션 아이디가 같으면 같은 경기다. 시간 차이와 상관없이 그 기록을 갱신한다.
 // 2) 세션이 없는 예전 기록은, 같은 로컬 날짜이고 저장 시각 차이가 3시간 이내이며
 //    참가자 이름이 같을 때만 같은 경기로 본다.
-// 3) 세션 아이디가 서로 다르면 다른 경기다. 같은 날, 3시간 안이어도 합치지 않는다.
-// 4) 다른 날 기록은 건드리지 않는다.
+// 3) 다시 저장할 때 세션 아이디가 서로 다르면 그 순간에는 새 줄로 둔다.
+// 4) 앱을 열 때 이미 쌓인 중복은 더 넓게 정리한다.
+//    같은 로컬 날짜 + 같은 참가자 + 4시간 이내면 점수나 세션이 달라도 가장 최근 한 줄만 남긴다.
+//    참가자가 다르거나, 아침/저녁처럼 4시간이 넘는 경기는 그대로 둔다.
 (function (global) {
-    // 같은 경기인지 판단하는 시간 창. 저장 시각 기준 앞뒤 3시간.
+    // 다시 저장할 때 예전 기록과 같은 경기로 보는 시간 창. 저장 시각 기준 앞뒤 3시간.
     var MATCH_WINDOW_MS = 3 * 60 * 60 * 1000;
+    // 이미 쌓인 중복을 열 때 합치는 시간 창. 한 라운드를 고쳐 저장한 간격이 3시간을 조금 넘어도 한 경기로 본다.
+    var COLLAPSE_WINDOW_MS = 4 * 60 * 60 * 1000;
 
     function localDateString(timestamp) {
         var d = new Date(timestamp);
@@ -26,14 +30,9 @@
 
     function playerNamesKey(players) {
         return (players || []).map(function (player) {
-            return player && player.name ? String(player.name) : '';
-        }).sort().join('\u0001');
-    }
-
-    function playerResultKey(players) {
-        return (players || []).map(function (player) {
-            if (!player) return '';
-            return [player.name, player.score, player.handy, player.net].join('\u0002');
+            return player && player.name ? String(player.name).trim() : '';
+        }).filter(function (name) {
+            return name;
         }).sort().join('\u0001');
     }
 
@@ -66,10 +65,6 @@
         if (record.date === today) return true;
         var time = recordTime(record);
         return !!(time && localDateString(time) === today);
-    }
-
-    function sessionsConflict(a, b) {
-        return !!(a && b && a.sessionId && b.sessionId && a.sessionId !== b.sessionId);
     }
 
     function findHistoryMatch(history, options) {
@@ -196,12 +191,21 @@
         return { history: list, updated: false, id: record.id };
     }
 
-    // 이미 쌓인 기록용. 같은 세션의 중복, 그리고 내용이 완전히 같은 중복만 지운다.
-    // 점수가 다른데 세션이 없는 기록은 여기서 지우지 않는다. 그건 다음 저장 때 시간 창으로 합친다.
-    function collapseStoredDuplicates(history) {
-        var list = cloneHistory(history);
-        var remove = new Set();
+    function keepNewest(list, indexes, remove) {
+        if (!indexes || indexes.length < 2) return;
+        var keep = indexes[0];
+        indexes.forEach(function (index) {
+            var time = recordTime(list[index]);
+            var keepTime = recordTime(list[keep]);
+            if (time > keepTime || (time === keepTime && index > keep)) keep = index;
+        });
+        indexes.forEach(function (index) {
+            if (index !== keep) remove.add(index);
+        });
+    }
 
+    // 같은 세션은 시간을 넘어도 한 경기다. 가장 최근 저장만 남긴다.
+    function collapseSameSessions(list, remove) {
         var bySession = new Map();
         list.forEach(function (record, index) {
             if (!record.sessionId) return;
@@ -209,57 +213,53 @@
             bySession.get(record.sessionId).push(index);
         });
         bySession.forEach(function (indexes) {
-            if (indexes.length < 2) return;
-            var keep = indexes[0];
-            indexes.forEach(function (index) {
-                if (recordTime(list[index]) >= recordTime(list[keep])) keep = index;
-            });
-            indexes.forEach(function (index) {
-                if (index !== keep) remove.add(index);
-            });
+            keepNewest(list, indexes, remove);
+        });
+    }
+
+    // 앱을 열 때 이미 쌓인 중복을 정리한다.
+    // 같은 날짜, 같은 참가자, 가장 이른 시각부터 4시간 안이면 점수가 달라도 최신 한 줄만 남긴다.
+    // 예: 2026-09-30에 같은 멤버로 세 번 저장된 기록 → 1줄.
+    function collapseStoredDuplicates(history) {
+        var list = cloneHistory(history);
+        var remove = new Set();
+        collapseSameSessions(list, remove);
+
+        var groups = new Map();
+        list.forEach(function (record, index) {
+            if (remove.has(index)) return;
+            var names = playerNamesKey(record.players);
+            if (!names) return;
+            var day = record.date || (recordTime(record) ? localDateString(recordTime(record)) : '');
+            if (!day) return;
+            var key = day + '\u0000' + names;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(index);
         });
 
-        var used = new Set(remove);
-        var sortedIndexes = list.map(function (_, index) { return index; }).sort(function (a, b) {
-            return recordTime(list[a]) - recordTime(list[b]);
-        });
-
-        sortedIndexes.forEach(function (start) {
-            if (used.has(start)) return;
-            var cluster = [start];
-            used.add(start);
-            var startRecord = list[start];
-            var resultKey = playerResultKey(startRecord.players);
-            var startTime = recordTime(startRecord);
-
-            sortedIndexes.forEach(function (other) {
-                if (used.has(other) || other === start) return;
-                var otherRecord = list[other];
-                if (playerResultKey(otherRecord.players) !== resultKey) return;
-                if (sessionsConflict(startRecord, otherRecord)) return;
-                if (!sameStoredDay(startRecord, otherRecord)) return;
-                var time = recordTime(otherRecord);
-                if (!startTime || !time || Math.abs(time - startTime) > MATCH_WINDOW_MS) return;
-                cluster.push(other);
-                used.add(other);
+        groups.forEach(function (indexes) {
+            var sorted = indexes.slice().sort(function (a, b) {
+                return recordTime(list[a]) - recordTime(list[b]);
             });
-
-            if (cluster.length < 2) return;
-            var keepIndex = cluster[0];
-            cluster.forEach(function (index) {
-                if (recordTime(list[index]) >= recordTime(list[keepIndex])) keepIndex = index;
-            });
-            cluster.forEach(function (index) {
-                if (index !== keepIndex) remove.add(index);
-            });
+            var start = 0;
+            while (start < sorted.length) {
+                var origin = recordTime(list[sorted[start]]);
+                var end = start + 1;
+                while (end < sorted.length) {
+                    var time = recordTime(list[sorted[end]]);
+                    if (!origin || !time || (time - origin) > COLLAPSE_WINDOW_MS) break;
+                    end += 1;
+                }
+                keepNewest(list, sorted.slice(start, end), remove);
+                start = end;
+            }
         });
 
         if (remove.size === 0) return { history: list, changed: false };
 
         var affectedDates = new Set();
         remove.forEach(function (index) {
-            affectedDates.add(list[index].date);
-            affectedDates.add(list[index] && localDateString(recordTime(list[index])));
+            if (list[index] && list[index].date) affectedDates.add(list[index].date);
         });
         var next = list.filter(function (_, index) { return !remove.has(index); });
         renumberDates(next, Array.from(affectedDates));
@@ -268,6 +268,7 @@
 
     global.GolfHistory = {
         MATCH_WINDOW_MS: MATCH_WINDOW_MS,
+        COLLAPSE_WINDOW_MS: COLLAPSE_WINDOW_MS,
         localDateString: localDateString,
         recordTime: recordTime,
         playerNamesKey: playerNamesKey,

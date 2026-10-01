@@ -68,6 +68,7 @@ const app = {
                 }
             });
 
+            // 같은 날·같은 참가자·4시간 안의 중복(점수가 달라도)은 가장 최근 한 줄만 남긴다.
             if (typeof GolfHistory !== 'undefined' && GolfHistory.collapseStoredDuplicates) {
                 const collapsed = GolfHistory.collapseStoredDuplicates(this.history);
                 if (collapsed.changed) {
@@ -793,7 +794,9 @@ const app = {
             // 'new'는 방금 조를 새로 짠 경기다. 직전 기록을 시간 창으로 덮어쓰지 않는다.
             allowTimeMatch: this.gameSessionOrigin !== 'new'
         });
-        this.history = result.history;
+        // 저장 직후에도 같은 날·같은 참가자·4시간 안의 예전 중복을 최신 한 줄로 정리한다.
+        const collapsed = GolfHistory.collapseStoredDuplicates(result.history);
+        this.history = collapsed.history;
         this.saveHistoryToStorage();
     },
 
