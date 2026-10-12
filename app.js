@@ -1259,7 +1259,9 @@ const app = {
     updateServerStatusUI(status, text) {
         const dot = document.getElementById('server-status-dot');
         const label = document.getElementById('server-status-text');
+        const chip = document.getElementById('sync-status');
         if (dot) dot.className = `status-dot ${status}`;
+        if (chip) chip.className = `sync-status ${status}`;
         if (label) label.textContent = text || this.syncStatusText(status === 'online' ? 'online' : 'offline');
     },
 
@@ -1280,13 +1282,17 @@ const app = {
             : (kind === 'offline' || kind === 'local') ? 'offline'
             : kind === 'checking' ? 'checking'
             : 'online';
+        const wait = (typeof GolfSync !== 'undefined' && GolfSync.TOAST_MS) || 1600;
+        if (kind === 'saving' || kind === 'saved' || kind === 'error' || kind === 'offline') {
+            this._holdStatusUntil = Date.now() + wait;
+        }
         this.updateServerStatusUI(dot, text);
         if (options.toast) this.showToast(text);
         if (kind === 'saved') {
             clearTimeout(this._statusRevert);
-            const wait = (typeof GolfSync !== 'undefined' && GolfSync.TOAST_MS) || 1600;
             this._statusRevert = setTimeout(() => {
                 if (this.server.isConnected && (!this.sync || this.sync.writesInFlight === 0) && !this._needsSync) {
+                    this._holdStatusUntil = 0;
                     this.updateServerStatusUI('online', this.syncStatusText('online'));
                 }
             }, wait);
@@ -1300,11 +1306,13 @@ const app = {
         this.server.isConnected = !!on;
         if (this.sync) this.sync.connected = !!on;
         if (!on) {
+            this._holdStatusUntil = 0;
             this.updateServerStatusUI('offline', this.syncStatusText('offline'));
             if (wasKnown && prev) this.showToast(this.syncStatusText('offline'));
             return;
         }
-        if (!this.sync || this.sync.writesInFlight === 0) {
+        const holding = this._holdStatusUntil && Date.now() < this._holdStatusUntil;
+        if (!holding && (!this.sync || this.sync.writesInFlight === 0)) {
             this.updateServerStatusUI('online', this.syncStatusText('online'));
         }
         if (this._mockMode) this.pullMockSnapshot();
@@ -1360,6 +1368,11 @@ const app = {
         if (!options) options = {};
         if (options.announce) this._announceNext = true;
         if (options.explicit) this._explicitToast = true;
+        if (options.announce || options.explicit) {
+            const hasServer = !!(this.server && (this.server.dbRef || this.server.dbUrl));
+            const offline = hasServer && this._connKnown && !this.server.isConnected;
+            this.showSyncFeedback(offline ? 'offline' : 'saving', { toast: true });
+        }
         clearTimeout(this._syncTimer);
         const wait = (typeof GolfSync !== 'undefined' && GolfSync.WRITE_DEBOUNCE_MS) || 500;
         this._syncTimer = setTimeout(() => this.flushSync(), wait);

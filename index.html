@@ -25,6 +25,7 @@
                     <span id="server-status-dot" class="status-dot checking"></span>
                     <span id="server-status-text">연결 확인 중</span>
                 </div>
+                <div id="sync-toast" class="sync-toast" role="status" aria-live="polite"></div>
             </div>
             
             <button id="show-history-btn" class="btn-history" style="white-space: nowrap; flex-shrink: 0; position: static; margin: 0; padding: 8px 12px; font-size: 0.9rem; margin-top: 4px;">기록 📜</button>
@@ -152,7 +153,6 @@
 
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <div id="sync-toast" class="sync-toast" role="status" aria-live="polite"></div>
     <script src="firebase-config.js"></script>
     <script src="score.js"></script>
     <script src="history-match.js"></script>
