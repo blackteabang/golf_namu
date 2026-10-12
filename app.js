@@ -1354,10 +1354,14 @@ const app = {
             this.renderPlayerList();
         }
         const roomScreen = this.currentStep === 'rooms';
-        if (roomScreen && (roomsChanged || playersChanged) && this.rooms && this.rooms.length > 0) {
-            const isKeypadOpen = !!document.getElementById('keypad-overlay');
-            const isDragging = !!document.querySelector('.touch-drag-avatar') || !!document.querySelector('.room-player.dragging');
-            if (!isKeypadOpen && !isDragging) this.renderRooms();
+        const isKeypadOpen = !!document.getElementById('keypad-overlay');
+        const isDragging = !!document.querySelector('.touch-drag-avatar') || !!document.querySelector('.room-player.dragging');
+        if ((roomsChanged || playersChanged) && this.rooms && this.rooms.length > 0 && !isKeypadOpen && !isDragging) {
+            const typingName = document.activeElement === this.playerNameInput;
+            if (roomScreen || (roomsChanged && !typingName && this.currentStep !== 'results' && this.currentStep !== 'history')) {
+                this.renderRooms();
+                if (!roomScreen) this.showStep('rooms');
+            }
         } else if (roomsChanged && (!this.rooms || this.rooms.length === 0) && roomScreen) {
             this.showStep('players');
         }
