@@ -21,6 +21,11 @@
                     <h1 style="font-size: 1.4rem; margin: 0; line-height: 1.2; white-space: nowrap;">싱글벙글</h1>
                 </div>
                 <p class="subtitle" style="margin: 0; font-size: 0.8rem; white-space: nowrap;">오늘도 즐거운 골프생활</p>
+                <div id="sync-status" class="sync-status" aria-live="polite">
+                    <span id="server-status-dot" class="status-dot checking"></span>
+                    <span id="server-status-text">연결 확인 중</span>
+                </div>
+                <div id="sync-toast" class="sync-toast" role="status" aria-live="polite"></div>
             </div>
             
             <button id="show-history-btn" class="btn-history" style="white-space: nowrap; flex-shrink: 0; position: static; margin: 0; padding: 8px 12px; font-size: 0.9rem; margin-top: 4px;">기록 📜</button>
@@ -151,6 +156,7 @@
     <script src="firebase-config.js"></script>
     <script src="score.js"></script>
     <script src="history-match.js"></script>
+    <script src="sync-model.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
