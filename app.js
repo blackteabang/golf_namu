@@ -13,16 +13,47 @@ const app = {
         dbRef: null
     },
 
+    // 브라우저 비밀 창고 키. 두 창 테스트(?mock=1&client=a)만 접두어를 붙여 캐시를 나눈다.
+    lsGet(key) {
+        return localStorage.getItem((this._storagePrefix || '') + key);
+    },
+
+    lsSet(key, value) {
+        localStorage.setItem((this._storagePrefix || '') + key, value);
+    },
+
+    lsRemove(key) {
+        localStorage.removeItem((this._storagePrefix || '') + key);
+    },
+
     // 🚀 프로그램이 처음 켜질 때 가장 먼저 실행되는 '준비 운동' 단계예요!
     init() {
+        this.sync = (typeof GolfSync !== 'undefined') ? GolfSync.createSyncClient() : null;
+        this._storagePrefix = '';
+        this._announceNext = false;
+        this._needsSync = false;
+        this._connKnown = false;
+        try {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('mock') === '1') {
+                this._mockMode = true;
+                const clientId = (params.get('client') || '').replace(/[^a-zA-Z0-9_-]/g, '');
+                if (clientId) this._storagePrefix = 'mock_' + clientId + ':';
+            }
+        } catch (e) {
+            this._mockMode = false;
+        }
         this.cacheDOM(); // 화면에 있는 버튼들을 자바스크립트가 기억하게 해요.
         this.bindEvents(); // 버튼을 눌렀을 때 어떤 행동을 할지 귀를 달아줘요.
         this.loadFromStorage(); // 컴퓨터 비밀창고(로컬 스토리지)에서 예전 기록을 불러와요.
         this.migrateHistory(); // 기존 기록을 최신 스코어/순위 기준으로 업데이트해요.
         this.initServer(); // 클라우드 서버와 연결하고 최신 데이터를 불러와요.
         this.renderPlayerList(); // 화면에 선수들 이름을 예쁘게 그려줘요.
+        window.addEventListener('pagehide', () => {
+            if (this._syncTimer) this.flushSync({ announce: false });
+        });
         
-        const savedStep = localStorage.getItem('golf_bet_current_step');
+        const savedStep = this.lsGet('golf_bet_current_step');
         
         // ⛳ 게임 중(조가 배정된 상태)일 때는 '최종 순위 보기'를 누르기 전까지 '지금 게임중' 화면을 유지해요!
         if (this.rooms && this.rooms.length > 0) {
@@ -38,8 +69,15 @@ const app = {
     },
 
     // 🔄 예전에 저장된 기록들이 예전 계산법(Net Score)으로 되어 있다면, 새로운 스코어 계산법으로 모두 바꿔주는 마법의 기능이에요.
+    historyStorageKey(record) {
+        if (typeof GolfSync !== 'undefined' && GolfSync.historyKey) return GolfSync.historyKey(record);
+        if (record && record.sessionId) return String(record.sessionId);
+        return 'id_' + (record && record.id != null ? record.id : 0);
+    },
+
     migrateHistory() {
         let migrated = false;
+        const beforeKeys = (this.history || []).map(record => this.historyStorageKey(record));
         if (this.history && this.history.length > 0) {
             // 9월 1일 데이터 일괄 삭제 요청 처리
             const oldLen = this.history.length;
@@ -78,7 +116,15 @@ const app = {
             }
 
             if (migrated) {
-                this.saveHistoryToStorage();
+                // 시작/수신 때는 내용이 실제로 바뀐 경우에만 로컬에 반영한다.
+                // 여기서 서버로 바로 쓰면 첫 스냅샷을 놓치거나 쓰기 루프가 생긴다.
+                const afterKeys = new Set((this.history || []).map(record => this.historyStorageKey(record)));
+                const now = Date.now();
+                beforeKeys.forEach(key => {
+                    if (!afterKeys.has(key) && this.sync) this.sync.tombstoneHistory(key, now);
+                });
+                this.lsSet('golf_bet_history', JSON.stringify(this.history));
+                this.persistSyncMeta();
                 console.log("기존 경기 기록이 새로운 스코어 및 랭킹 기준으로 업데이트되었습니다.");
             }
         }
@@ -124,7 +170,7 @@ const app = {
             this.saveGameBtn.addEventListener('click', () => {
                 this.saveToStorage();
                 this.saveCurrentGameToStorage();
-                alert('⛳ 현재까지의 조 편성 및 스코어가 성공적으로 저장되었습니다!');
+                this.flushSync({ explicit: true, announce: true });
             });
         }
 
@@ -147,6 +193,16 @@ const app = {
         });
     },
 
+    // 같은 순간에 두 명을 등록해도 선수별 경로가 겹치지 않게 아이디를 나눈다.
+    allocateId() {
+        let id = Date.now();
+        if (this._lastAllocatedId && id <= this._lastAllocatedId) id = this._lastAllocatedId + 1;
+        const taken = new Set((this.players || []).map(player => player.id));
+        while (taken.has(id)) id += 1;
+        this._lastAllocatedId = id;
+        return id;
+    },
+
     // ✏️ 새로운 선수를 바구니(players)에 추가하는 기능이에요.
     addPlayer() {
         const name = this.playerNameInput.value.trim();
@@ -157,11 +213,13 @@ const app = {
         if (isNaN(handy)) return alert('핸디를 숫자로 입력해주세요. (예: 18 또는 -5)');
 
         const newPlayer = {
-            id: Date.now(),
+            id: this.allocateId(),
             name,
             handy,
             score: null,
-            isActive: true
+            isActive: true,
+            updatedAt: Date.now(),
+            scoreUpdatedAt: 0
         };
 
         this.players.push(newPlayer);
@@ -178,6 +236,7 @@ const app = {
         const player = this.players.find(p => p.id === id);
         if (player) {
             player.isActive = isActive;
+            player.updatedAt = Date.now();
             this.saveToStorage();
             this.renderPlayerList();
         }
@@ -191,7 +250,9 @@ const app = {
     },
 
     removePlayer(id) {
+        if (this.sync) this.sync.tombstonePlayer(id, Date.now());
         this.players = this.players.filter(p => p.id !== id);
+        this.persistSyncMeta();
         this.saveToStorage();
         this.renderPlayerList();
     },
@@ -209,6 +270,7 @@ const app = {
             onConfirm: (val) => {
                 const handy = parseInt(val);
                 player.handy = isNaN(handy) ? 0 : handy;
+                player.updatedAt = Date.now();
                 this.saveToStorage();
                 this.renderPlayerList();
                 if (this.rooms && this.rooms.length > 0) {
@@ -274,7 +336,11 @@ const app = {
         this.startNewGameSession();
         
         // 새 게임을 시작하니까 모든 사람의 점수를 미입력(null) 상태로 초기화해요.
-        activePlayers.forEach(p => p.score = null);
+        const scoredAt = Date.now();
+        activePlayers.forEach(p => {
+            p.score = null;
+            p.scoreUpdatedAt = scoredAt;
+        });
         
         // 사람들을 무작위로 마구마구 섞어요! (Shuffle)
         const shuffled = [...activePlayers].sort(() => Math.random() - 0.5);
@@ -286,6 +352,7 @@ const app = {
         }
 
         // 창을 꺼도 조가 날아가지 않게 로컬 스토리지에 저장해요.
+        this.touchRooms();
         this.saveCurrentGameToStorage();
         this.saveToStorage();
         this.renderRooms();
@@ -364,6 +431,7 @@ const app = {
 
     addRoom() {
         this.rooms.push([]);
+        this.touchRooms();
         this.saveCurrentGameToStorage();
         this.renderRooms();
     },
@@ -371,6 +439,7 @@ const app = {
     removeRoom(roomIdx) {
         if (this.rooms[roomIdx] && this.rooms[roomIdx].length === 0) {
             this.rooms.splice(roomIdx, 1);
+            this.touchRooms();
             this.saveCurrentGameToStorage();
             this.renderRooms();
         }
@@ -397,6 +466,7 @@ const app = {
         // 타겟 방에 선수 추가
         this.rooms[targetRoomIdx].push(playerId);
 
+        this.touchRooms();
         this.saveCurrentGameToStorage();
         this.renderRooms();
     },
@@ -554,6 +624,7 @@ const app = {
         const player = this.players.find(p => p.id === playerId);
         if (player) {
             player.score = (score === null || score === undefined || score === '' || isNaN(score)) ? null : parseInt(score, 10);
+            player.scoreUpdatedAt = Date.now();
             this.saveToStorage(); // 점수가 바뀔 때마다 잃어버리지 않게 몰래 저장해둬요!
         }
     },
@@ -788,6 +859,7 @@ const app = {
             net: this.getNetScore(p.score, p.handy)
         }));
 
+        const beforeKeys = new Set((this.history || []).map(record => this.historyStorageKey(record)));
         const result = GolfHistory.upsertHistory(this.history, snapshot, {
             sessionId,
             now,
@@ -797,6 +869,11 @@ const app = {
         // 저장 직후에도 같은 날·같은 참가자·4시간 안의 예전 중복을 최신 한 줄로 정리한다.
         const collapsed = GolfHistory.collapseStoredDuplicates(result.history);
         this.history = collapsed.history;
+        const afterKeys = new Set(this.history.map(record => this.historyStorageKey(record)));
+        beforeKeys.forEach(key => {
+            if (!afterKeys.has(key) && this.sync) this.sync.tombstoneHistory(key, now);
+        });
+        this.persistSyncMeta();
         this.saveHistoryToStorage();
     },
 
@@ -902,7 +979,7 @@ const app = {
 
     showStep(stepName) {
         this.currentStep = stepName;
-        localStorage.setItem('golf_bet_current_step', stepName);
+        this.lsSet('golf_bet_current_step', stepName);
         Object.values(this.steps).forEach(step => step.classList.remove('active'));
         if (this.steps[stepName]) {
             this.steps[stepName].classList.add('active');
@@ -910,27 +987,54 @@ const app = {
         window.scrollTo(0, 0);
     },
 
+    touchRooms() {
+        this.roomsUpdatedAt = Date.now();
+    },
+
+    currentState() {
+        return {
+            players: this.players || [],
+            rooms: this.rooms || [],
+            history: this.history || [],
+            roomsUpdatedAt: this.roomsUpdatedAt || 0
+        };
+    },
+
+    persistLocalOnly() {
+        this.lsSet('golf_bet_players', JSON.stringify(this.players || []));
+        this.lsSet('golf_bet_current_rooms', JSON.stringify(this.rooms || []));
+        this.lsSet('golf_bet_history', JSON.stringify(this.history || []));
+        this.lsSet('golf_bet_rooms_updated_at', String(this.roomsUpdatedAt || 0));
+    },
+
+    persistSyncMeta() {
+        if (!this.sync) return;
+        if (this.sync.lastGood) this.lsSet('golf_bet_last_good', JSON.stringify(this.sync.lastGood));
+        this.lsSet('golf_bet_tombstones', JSON.stringify(this.sync.tombstones || { players: {}, scores: {}, history: {} }));
+    },
+
     // 💾 우리의 정보를 인터넷 브라우저의 '비밀 창고(로컬 스토리지)'에 저장하는 기능들이에요.
     saveToStorage() {
-        localStorage.setItem('golf_bet_players', JSON.stringify(this.players));
-        this.syncWithServer();
+        this.lsSet('golf_bet_players', JSON.stringify(this.players));
+        this.queueSync({ announce: true });
     },
 
     saveCurrentGameToStorage() {
-        localStorage.setItem('golf_bet_current_rooms', JSON.stringify(this.rooms));
-        this.syncWithServer();
+        this.lsSet('golf_bet_current_rooms', JSON.stringify(this.rooms));
+        this.lsSet('golf_bet_rooms_updated_at', String(this.roomsUpdatedAt || 0));
+        this.queueSync({ announce: true });
     },
 
     saveHistoryToStorage() {
-        localStorage.setItem('golf_bet_history', JSON.stringify(this.history));
-        this.syncWithServer();
+        this.lsSet('golf_bet_history', JSON.stringify(this.history));
+        this.queueSync({ announce: true });
     },
 
     // 현재 경기 세션. 새로고침 후에도 같은 경기를 다시 저장하면 같은 기록으로 연결해요.
     saveGameSession() {
         if (this.gameSessionId) {
-            localStorage.setItem('golf_bet_game_session', this.gameSessionId);
-            localStorage.setItem('golf_bet_game_session_origin', this.gameSessionOrigin || '');
+            this.lsSet('golf_bet_game_session', this.gameSessionId);
+            this.lsSet('golf_bet_game_session_origin', this.gameSessionOrigin || '');
         }
     },
 
@@ -949,8 +1053,8 @@ const app = {
     clearGameSession() {
         this.gameSessionId = '';
         this.gameSessionOrigin = '';
-        localStorage.removeItem('golf_bet_game_session');
-        localStorage.removeItem('golf_bet_game_session_origin');
+        this.lsRemove('golf_bet_game_session');
+        this.lsRemove('golf_bet_game_session_origin');
     },
 
     ensureGameSessionId() {
@@ -962,25 +1066,53 @@ const app = {
 
     // ☁️ Firebase Realtime Database 서버 초기화 및 실시간 동기화
     initServer() {
-        const savedUrl = localStorage.getItem('golf_firebase_db_url') || (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.databaseURL) || '';
+        if (this._mockMode) {
+            this.setServerUrl('mock://golf_namu');
+            return;
+        }
+        const savedUrl = this.lsGet('golf_firebase_db_url') || (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.databaseURL) || '';
         this.setServerUrl(savedUrl);
     },
 
+    detachServer() {
+        if (this._restInterval) {
+            clearInterval(this._restInterval);
+            this._restInterval = null;
+        }
+        if (this.server.dbRef && this._valueHandler && this.server.dbRef.off) {
+            this.server.dbRef.off('value', this._valueHandler);
+        }
+        if (this._infoRef && this._infoHandler && this._infoRef.off) {
+            this._infoRef.off('value', this._infoHandler);
+        }
+        this._valueHandler = null;
+        this._infoHandler = null;
+        this._infoRef = null;
+        this._usingInfoConnected = false;
+    },
+
     setServerUrl(url) {
+        this.detachServer();
         url = (url || '').trim().replace(/\/+$/, '');
         if (url.endsWith('.json')) url = url.replace(/\.json$/, '');
-        
+
+        if (this._mockMode) {
+            this.installMockServer();
+            return;
+        }
+
         if (!url) {
             this.server.dbUrl = '';
             this.server.isConnected = false;
             this.server.dbRef = null;
-            this.updateServerStatusUI('offline', '로컬 모드');
+            this._connKnown = true;
+            this.updateServerStatusUI('offline', this.syncStatusText('local'));
             return;
         }
 
         this.server.dbUrl = url;
+        this.updateServerStatusUI('checking', this.syncStatusText('checking'));
 
-        // Firebase SDK 초기화 시도
         try {
             if (typeof firebase !== 'undefined' && firebase.initializeApp) {
                 let appInstance;
@@ -991,22 +1123,7 @@ const app = {
                 }
                 const db = firebase.database(appInstance);
                 this.server.dbRef = db.ref('golf_namu');
-
-                // ⚡ Firebase 실시간 데이터 변경 감지 (어떤 폰/PC에서 변경하든 즉시 자동 반영)
-                this.server.dbRef.on('value', (snapshot) => {
-                    const data = snapshot.val();
-                    if (data) {
-                        this.handleServerData(data);
-                        this.server.isConnected = true;
-                        this.updateServerStatusUI('online', '실시간 동기화');
-                    }
-                }, (error) => {
-                    console.warn('Firebase SDK listener warning, using REST polling:', error);
-                    this.startRestSync();
-                });
-
-                this.server.isConnected = true;
-                this.updateServerStatusUI('online', '실시간 동기화');
+                this.bindSdk(db);
                 return;
             }
         } catch (e) {
@@ -1016,142 +1133,385 @@ const app = {
         this.startRestSync();
     },
 
+    bindSdk(db) {
+        this._usingInfoConnected = true;
+        this._valueHandler = (snapshot) => {
+            this.handleServerData(snapshot.val());
+        };
+        this.server.dbRef.on('value', this._valueHandler, (error) => {
+            console.warn('Firebase SDK listener warning, using REST polling:', error);
+            this.setConnected(false);
+            this.startRestSync();
+        });
+        this._infoRef = db.ref('.info/connected');
+        this._infoHandler = (snapshot) => {
+            this.setConnected(snapshot.val() === true);
+        };
+        this._infoRef.on('value', this._infoHandler);
+    },
+
+    installMockServer() {
+        const KEY = 'golf_mock_db_v1';
+        const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('golf_mock_db_v1') : null;
+        const listeners = [];
+        const connListeners = [];
+        let connected = true;
+        const read = () => {
+            try {
+                const raw = localStorage.getItem(KEY);
+                return raw ? JSON.parse(raw) : null;
+            } catch (e) {
+                return null;
+            }
+        };
+        const write = (data) => localStorage.setItem(KEY, JSON.stringify(data));
+        const emit = () => {
+            const value = read();
+            listeners.forEach(fn => {
+                try { fn({ val: () => value }); } catch (e) { console.warn(e); }
+            });
+        };
+        if (channel) channel.onmessage = () => emit();
+        window.addEventListener('storage', (event) => {
+            if (event.key === KEY) emit();
+        });
+        this.server.dbUrl = 'mock://golf_namu';
+        this.server.dbRef = {
+            on(event, cb) {
+                if (event !== 'value') return;
+                listeners.push(cb);
+                cb({ val: () => read() });
+            },
+            off() {},
+            update: async (updates) => {
+                write(GolfSync.applyMultiPath(read() || {}, updates));
+                if (channel) channel.postMessage({ t: Date.now() });
+                emit();
+            },
+            set: async (value) => {
+                write(value);
+                if (channel) channel.postMessage({ t: Date.now() });
+                emit();
+            }
+        };
+        this._mock = {
+            setConnected: (on) => {
+                connected = !!on;
+                connListeners.forEach(cb => cb({ val: () => connected }));
+            },
+            pull: () => read()
+        };
+        this._valueHandler = (snapshot) => this.handleServerData(snapshot.val());
+        this.server.dbRef.on('value', this._valueHandler);
+        this._infoHandler = (snapshot) => this.setConnected(snapshot.val() === true);
+        connListeners.push(this._infoHandler);
+        this._infoHandler({ val: () => connected });
+        this.installMockTools();
+    },
+
+    // 목 서버 데모에서만 이 창의 연결을 끊었다 다시 붙인다.
+    installMockTools() {
+        if (!document || !document.createElement) return;
+        const footer = document.querySelector ? document.querySelector('footer') : null;
+        if (!footer) return;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.id = 'mock-link-toggle';
+        button.textContent = '연결 끊기';
+        button.style.cssText = 'display:block;margin:8px auto 0;background:#fff;border:1px solid #cbd5e1;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700;color:#64748b;cursor:pointer;';
+        button.addEventListener('click', () => {
+            const goingOnline = !this.server.isConnected;
+            this.setOnlineForDebug(goingOnline);
+            button.textContent = goingOnline ? '연결 끊기' : '다시 연결';
+        });
+        footer.appendChild(button);
+    },
+
+    // 데모/테스트에서 이 창만 오프라인으로 바꿀 때 씁니다. (?mock=1)
+    setOnlineForDebug(on) {
+        if (this._mock && this._mock.setConnected) this._mock.setConnected(!!on);
+    },
+
+    pullMockSnapshot() {
+        if (!this._mock || !this._mock.pull) return;
+        this.handleServerData(this._mock.pull());
+    },
+
     startRestSync() {
-        if (!this.server.dbUrl) return;
+        if (!this.server.dbUrl || this._mockMode) return;
+        this._restMode = true;
         this.loadFromServer();
         if (this._restInterval) clearInterval(this._restInterval);
         this._restInterval = setInterval(() => this.loadFromServer(), 3000);
     },
 
+    syncStatusText(kind) {
+        if (typeof GolfSync !== 'undefined' && GolfSync.statusText) return GolfSync.statusText(kind);
+        if (kind === 'saving') return '저장 중…';
+        if (kind === 'saved') return '저장됨 ✓';
+        if (kind === 'offline') return '오프라인 · 연결되면 저장';
+        if (kind === 'error') return '저장 실패';
+        if (kind === 'local') return '로컬 모드';
+        if (kind === 'checking') return '연결 확인 중';
+        return '연결됨';
+    },
+
     updateServerStatusUI(status, text) {
         const dot = document.getElementById('server-status-dot');
         const label = document.getElementById('server-status-text');
-        if (dot) {
-            dot.className = `status-dot ${status}`;
-        }
-        if (label) {
-            label.textContent = text || (status === 'online' ? '동기화' : '서버');
+        if (dot) dot.className = `status-dot ${status}`;
+        if (label) label.textContent = text || this.syncStatusText(status === 'online' ? 'online' : 'offline');
+    },
+
+    showToast(message) {
+        const el = document.getElementById('sync-toast');
+        if (!el) return;
+        el.textContent = message;
+        el.classList.add('visible');
+        clearTimeout(this._toastTimer);
+        const wait = (typeof GolfSync !== 'undefined' && GolfSync.TOAST_MS) || 1600;
+        this._toastTimer = setTimeout(() => el.classList.remove('visible'), wait);
+    },
+
+    showSyncFeedback(kind, options = {}) {
+        const text = this.syncStatusText(kind);
+        const dot = kind === 'saving' ? 'saving'
+            : kind === 'error' ? 'error'
+            : (kind === 'offline' || kind === 'local') ? 'offline'
+            : kind === 'checking' ? 'checking'
+            : 'online';
+        this.updateServerStatusUI(dot, text);
+        if (options.toast) this.showToast(text);
+        if (kind === 'saved') {
+            clearTimeout(this._statusRevert);
+            const wait = (typeof GolfSync !== 'undefined' && GolfSync.TOAST_MS) || 1600;
+            this._statusRevert = setTimeout(() => {
+                if (this.server.isConnected && (!this.sync || this.sync.writesInFlight === 0) && !this._needsSync) {
+                    this.updateServerStatusUI('online', this.syncStatusText('online'));
+                }
+            }, wait);
         }
     },
 
+    setConnected(on) {
+        const wasKnown = this._connKnown;
+        const prev = this.server.isConnected;
+        this._connKnown = true;
+        this.server.isConnected = !!on;
+        if (this.sync) this.sync.connected = !!on;
+        if (!on) {
+            this.updateServerStatusUI('offline', this.syncStatusText('offline'));
+            if (wasKnown && prev) this.showToast(this.syncStatusText('offline'));
+            return;
+        }
+        if (!this.sync || this.sync.writesInFlight === 0) {
+            this.updateServerStatusUI('online', this.syncStatusText('online'));
+        }
+        if (this._mockMode) this.pullMockSnapshot();
+        const pendingWrite = this._needsSync || (this.sync && this.sync.hydrated && this.sync.nextUpdates(this.currentState()));
+        if (pendingWrite) this.flushSync({ announce: !!this._announceNext });
+    },
+
     handleServerData(data) {
-        if (!data) return;
-        // 로컬에서 변경사항을 서버에 올린 지 3초가 지나지 않았다면(서버 딜레이 방지), 과거 데이터 덮어쓰기 무시
-        if (this.lastLocalUpdate && Date.now() - this.lastLocalUpdate < 10000) return;
+        if (!this.sync) return;
+        const result = this.sync.ingest(data == null ? null : data, this.currentState());
+        if (!result || result.deferred) return;
+        this.adoptSyncResult(result);
+    },
 
-        let changedPlayers = false;
-        let changedRooms = false;
-        let changedHistory = false;
+    adoptSyncResult(result) {
+        if (!result || result.deferred) return;
+        this.persistSyncMeta();
+        const before = this.currentState();
+        if (result.changed && result.state) {
+            this.players = result.state.players;
+            this.rooms = result.state.rooms;
+            this.history = result.state.history;
+            this.roomsUpdatedAt = result.state.roomsUpdatedAt || 0;
+            this.persistLocalOnly();
+            this.renderAfterRemote(before);
+        }
+        const historyMigrated = this.migrateHistory();
+        if (historyMigrated) this.renderAfterRemote(before);
+        if (result.dirty || historyMigrated || result.migrationNeeded) {
+            this.queueSync({ announce: false });
+        }
+    },
 
-        if (data.players && Array.isArray(data.players)) {
-            if (JSON.stringify(this.players) !== JSON.stringify(data.players)) {
-                this.players = data.players;
-                localStorage.setItem('golf_bet_players', JSON.stringify(this.players));
-                changedPlayers = true;
+    renderAfterRemote(before) {
+        const playersChanged = JSON.stringify(before.players || []) !== JSON.stringify(this.players || []);
+        const roomsChanged = JSON.stringify(before.rooms || []) !== JSON.stringify(this.rooms || []);
+        const historyChanged = JSON.stringify(before.history || []) !== JSON.stringify(this.history || []);
+        if (playersChanged && this.playerNameInput && document.activeElement !== this.playerNameInput && document.activeElement !== this.playerHandyInput) {
+            this.renderPlayerList();
+        }
+        const roomScreen = this.currentStep === 'rooms';
+        if (roomScreen && (roomsChanged || playersChanged) && this.rooms && this.rooms.length > 0) {
+            const isKeypadOpen = !!document.getElementById('keypad-overlay');
+            const isDragging = !!document.querySelector('.touch-drag-avatar') || !!document.querySelector('.room-player.dragging');
+            if (!isKeypadOpen && !isDragging) this.renderRooms();
+        } else if (roomsChanged && (!this.rooms || this.rooms.length === 0) && roomScreen) {
+            this.showStep('players');
+        }
+        if (historyChanged) this.renderHistory();
+    },
+
+    queueSync(options = {}) {
+        if (!options) options = {};
+        if (options.announce) this._announceNext = true;
+        if (options.explicit) this._explicitToast = true;
+        clearTimeout(this._syncTimer);
+        const wait = (typeof GolfSync !== 'undefined' && GolfSync.WRITE_DEBOUNCE_MS) || 500;
+        this._syncTimer = setTimeout(() => this.flushSync(), wait);
+    },
+
+    async flushSync(options = {}) {
+        if (options && options.announce) this._announceNext = true;
+        if (options && options.explicit) this._explicitToast = true;
+        clearTimeout(this._syncTimer);
+        this._syncTimer = null;
+        if (this._flushing) {
+            this._flushQueued = true;
+            return this._flushing;
+        }
+        const current = this._flushNow();
+        this._flushing = current;
+        try {
+            await current;
+        } finally {
+            if (this._flushing === current) this._flushing = null;
+            if (this._flushQueued) {
+                this._flushQueued = false;
+                await this.flushSync();
             }
         }
+    },
 
-        if (data.history && Array.isArray(data.history)) {
-            const tempHistory = this.history;
-            this.history = data.history;
-            const migrated = this.migrateHistory();
-            
-            if (JSON.stringify(tempHistory) !== JSON.stringify(this.history)) {
-                changedHistory = true;
-                if (!migrated) {
-                    localStorage.setItem('golf_bet_history', JSON.stringify(this.history));
-                }
-            }
+    async _flushNow() {
+        const announce = !!(this._announceNext || this._explicitToast);
+        const explicit = !!this._explicitToast;
+        this._announceNext = false;
+        this._explicitToast = false;
+        if (!this.sync || typeof GolfSync === 'undefined') {
+            if (announce || explicit) this.showSyncFeedback('saved', { toast: true });
+            return;
         }
 
-        if (data.rooms && Array.isArray(data.rooms)) {
-            if (JSON.stringify(this.rooms) !== JSON.stringify(data.rooms)) {
-                this.rooms = data.rooms;
-                localStorage.setItem('golf_bet_current_rooms', JSON.stringify(this.rooms));
-                changedRooms = true;
+        const hasServer = !!(this.server.dbRef || this.server.dbUrl);
+        if (!hasServer) {
+            if (!this.sync.hydrated) {
+                this.sync.hydrated = true;
+                this.sync.acked = GolfSync.cloneState(this.currentState());
             }
-        } else if ((!data.rooms || data.rooms.length === 0) && this.rooms.length > 0) {
-            this.rooms = [];
-            localStorage.setItem('golf_bet_current_rooms', JSON.stringify(this.rooms));
-            changedRooms = true;
+            if (announce || explicit) this.showSyncFeedback('saved', { toast: true });
+            return;
         }
 
-        if (changedPlayers) {
-            if (document.activeElement !== this.playerNameInput && document.activeElement !== this.playerHandyInput) {
-                this.renderPlayerList();
-            }
+        if (!this.sync.hydrated) {
+            this._needsSync = true;
+            if (announce) this._announceNext = true;
+            if (!this._connKnown) this.updateServerStatusUI('checking', this.syncStatusText('checking'));
+            else if (!this.server.isConnected) this.showSyncFeedback('offline', { toast: announce || explicit });
+            return;
         }
 
-        if (changedRooms && this.rooms.length > 0) {
-            // 이미 게임중 화면에 있을 때만 방 목록 갱신 (자동 화면 전환 없음)
-            if (this.currentStep === 'rooms') {
-                const isKeypadOpen = !!document.getElementById('keypad-overlay');
-                const isDragging = !!document.querySelector('.touch-drag-avatar') || !!document.querySelector('.room-player.dragging');
-                if (!isKeypadOpen && !isDragging) {
-                    this.renderRooms();
-                }
-            }
-        } else if (changedRooms && this.rooms.length === 0) {
-            if (this.currentStep === 'rooms') {
-                this.showStep('players');
-            }
+        const updates = this.sync.nextUpdates(this.currentState());
+        const decision = GolfSync.decideFlush(!!this.server.isConnected, updates, explicit || announce);
+        if (!this._connKnown && !this.server.isConnected) {
+            this._needsSync = true;
+            if (announce) this._announceNext = true;
+            this.updateServerStatusUI('checking', this.syncStatusText('checking'));
+            return;
+        }
+        if (decision.action === 'defer') {
+            this._needsSync = true;
+            if (announce) this._announceNext = true;
+            this.showSyncFeedback('offline', { toast: announce || explicit });
+            return;
+        }
+        if (decision.action !== 'write') {
+            if (explicit) this.showSyncFeedback('saved', { toast: true });
+            return;
         }
 
-        if (changedHistory) {
-            this.renderHistory();
+        this.sync.beginWrite();
+        this.showSyncFeedback('saving', { toast: announce || explicit });
+        try {
+            await this.writeUpdates(updates);
+            const follow = this.sync.finishWrite(true, this.currentState(), updates);
+            this._needsSync = !!(follow && follow.dirty);
+            this.persistSyncMeta();
+            this.showSyncFeedback('saved', { toast: announce || explicit });
+            if (follow && !follow.deferred) this.adoptSyncResult(follow);
+        } catch (err) {
+            const follow = this.sync.finishWrite(false, this.currentState(), updates);
+            this._needsSync = true;
+            if (announce) this._announceNext = true;
+            const offline = !this.server.isConnected || !!(err && err.offline);
+            console.warn('sync failed', err);
+            if (offline) {
+                this.server.isConnected = false;
+                if (this.sync) this.sync.connected = false;
+                this.showSyncFeedback('offline', { toast: true });
+            } else {
+                this.showSyncFeedback('error', { toast: true });
+            }
+            if (follow && !follow.deferred) this.adoptSyncResult(follow);
+        }
+    },
+
+    async writeUpdates(updates) {
+        if (this.server.dbRef && typeof this.server.dbRef.update === 'function') {
+            await this.server.dbRef.update(updates);
+            return;
+        }
+        if (!this.server.dbUrl) {
+            const error = new Error('no server');
+            error.offline = true;
+            throw error;
+        }
+        const patches = GolfSync.groupRestPatches(updates);
+        for (let i = 0; i < patches.length; i++) {
+            const patch = patches[i];
+            const url = patch.path
+                ? `${this.server.dbUrl}/golf_namu/${patch.path}.json`
+                : `${this.server.dbUrl}/golf_namu.json`;
+            let response;
+            try {
+                response = await fetch(url, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(patch.body)
+                });
+            } catch (err) {
+                err.offline = true;
+                throw err;
+            }
+            if (!response.ok) {
+                const error = new Error('REST patch failed ' + response.status);
+                error.status = response.status;
+                throw error;
+            }
         }
     },
 
     async syncWithServer() {
-        this.lastLocalUpdate = Date.now();
-        const payload = {
-            players: this.players,
-            history: this.history,
-            rooms: this.rooms,
-            updatedAt: Date.now()
-        };
-
-        if (this.server.dbRef) {
-            try {
-                await this.server.dbRef.set(payload);
-                this.server.isConnected = true;
-                this.updateServerStatusUI('online', '실시간 동기화');
-                return;
-            } catch (err) {
-                console.warn('Firebase DB sync error:', err);
-            }
-        }
-
-        if (this.server.dbUrl) {
-            try {
-                const res = await fetch(`${this.server.dbUrl}/golf_namu.json`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                if (res.ok) {
-                    this.server.isConnected = true;
-                    this.updateServerStatusUI('online', '실시간 동기화');
-                }
-            } catch (err) {
-                console.warn('REST server sync error:', err);
-            }
-        }
+        await this.flushSync({ announce: false });
     },
 
     async loadFromServer() {
-        if (!this.server.dbUrl) return;
-
+        if (!this.server.dbUrl || this._mockMode) return;
         try {
             const response = await fetch(`${this.server.dbUrl}/golf_namu.json`);
-            if (!response.ok) return;
-            const data = await response.json();
-            if (data) {
-                this.handleServerData(data);
-                this.server.isConnected = true;
-                this.updateServerStatusUI('online', '실시간 동기화');
+            if (!response.ok) {
+                this.setConnected(false);
+                return;
             }
+            const data = await response.json();
+            this.handleServerData(data);
+            this.setConnected(true);
         } catch (error) {
+            this.setConnected(false);
             console.warn('Load from server failed:', error);
         }
     },
@@ -1162,13 +1522,13 @@ const app = {
         const alertBox = document.getElementById('server-status-alert');
 
         if (input) {
-            input.value = this.server.dbUrl || localStorage.getItem('golf_firebase_db_url') || (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.databaseURL) || '';
+            input.value = (this._mockMode ? '' : this.server.dbUrl) || this.lsGet('golf_firebase_db_url') || (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.databaseURL) || '';
         }
 
         if (alertBox) {
             if (this.server.isConnected) {
                 alertBox.className = 'server-status-box success';
-                alertBox.innerHTML = '🟢 현재 클라우드 서버와 실시간으로 연결되어 있습니다.';
+                alertBox.innerHTML = '🟢 클라우드 서버에 연결되어 있습니다.';
             } else if (this.server.dbUrl) {
                 alertBox.className = 'server-status-box warning';
                 alertBox.innerHTML = '🟡 서버 주소가 설정되었습니다. [연결 테스트]로 상태를 확인하세요.';
@@ -1197,7 +1557,7 @@ const app = {
             url = 'https://' + url;
         }
 
-        localStorage.setItem('golf_firebase_db_url', url);
+        this.lsSet('golf_firebase_db_url', url);
         if (window.FIREBASE_CONFIG) window.FIREBASE_CONFIG.databaseURL = url;
 
         if (alertBox) {
@@ -1277,25 +1637,39 @@ const app = {
 
     // 🧲 컴퓨터 비밀 창고(로컬 스토리지)에 예전에 저장해뒀던 정보를 다시 쏙쏙 뽑아오는 기능이에요.
     loadFromStorage() {
-        const savedPlayers = localStorage.getItem('golf_bet_players');
+        const savedPlayers = this.lsGet('golf_bet_players');
         if (savedPlayers) {
             this.players = JSON.parse(savedPlayers);
         }
         
-        const savedHistory = localStorage.getItem('golf_bet_history');
+        const savedHistory = this.lsGet('golf_bet_history');
         if (savedHistory) {
             this.history = JSON.parse(savedHistory);
         }
 
-        const savedRooms = localStorage.getItem('golf_bet_current_rooms');
+        const savedRooms = this.lsGet('golf_bet_current_rooms');
         if (savedRooms) {
             this.rooms = JSON.parse(savedRooms);
             // 옛날 버전과 호환되도록 아이디(ID)만 깔끔하게 빼와요.
             this.rooms = this.rooms.map(room => room.map(p => typeof p === 'object' ? p.id : p));
         }
 
-        this.gameSessionId = localStorage.getItem('golf_bet_game_session') || '';
-        this.gameSessionOrigin = localStorage.getItem('golf_bet_game_session_origin') || '';
+        const savedRoomsAt = this.lsGet('golf_bet_rooms_updated_at');
+        if (savedRoomsAt) this.roomsUpdatedAt = Number(savedRoomsAt) || 0;
+
+        if (this.sync) {
+            const lastGood = this.lsGet('golf_bet_last_good');
+            if (lastGood) {
+                try { this.sync.lastGood = JSON.parse(lastGood); } catch (e) { /* 손상된 캐시는 무시 */ }
+            }
+            const tombs = this.lsGet('golf_bet_tombstones');
+            if (tombs) {
+                try { this.sync.tombstones = JSON.parse(tombs); } catch (e) { /* 손상된 캐시는 무시 */ }
+            }
+        }
+
+        this.gameSessionId = this.lsGet('golf_bet_game_session') || '';
+        this.gameSessionOrigin = this.lsGet('golf_bet_game_session_origin') || '';
         // 이 업데이트 전에 진행 중이던 경기는 세션이 없다. 이어서 저장할 수 있게 하나 만들어요.
         if (!this.gameSessionId && this.rooms && this.rooms.length > 0) {
             this.continueGameSession();
@@ -1306,8 +1680,13 @@ const app = {
     restart() {
         if (confirm('현재 게임 결과를 기록하고 새로운 게임을 시작하시겠습니까? (등록된 인원은 유지됩니다)')) {
             // 선수들 명단은 놔두고, 점수랑 조 편성만 백지상태로 만들어요.
-            this.players.forEach(p => p.score = null);
+            const clearedAt = Date.now();
+            this.players.forEach(p => {
+                p.score = null;
+                p.scoreUpdatedAt = clearedAt;
+            });
             this.rooms = [];
+            this.touchRooms();
             this.clearGameSession();
             this.saveCurrentGameToStorage();
             this.saveToStorage();

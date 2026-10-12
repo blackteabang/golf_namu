@@ -6,7 +6,7 @@
   "main": "index.html",
   "scripts": {
     "start": "serve .",
-    "test": "node score.test.mjs && node history-match.test.mjs"
+    "test": "node score.test.mjs && node history-match.test.mjs && node sync-model.test.mjs && node sync-app.smoke.mjs"
   },
   "dependencies": {
     "@vercel/kv": "^1.0.1"
