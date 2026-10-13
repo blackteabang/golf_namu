@@ -33,6 +33,8 @@ const app = {
         this._announceNext = false;
         this._needsSync = false;
         this._connKnown = false;
+        this._offlineGraceMs = 3000;
+        this._lastReachAt = 0;
         try {
             const params = new URLSearchParams(window.location.search);
             if (params.get('mock') === '1') {
@@ -1106,12 +1108,12 @@ const app = {
             this.server.isConnected = false;
             this.server.dbRef = null;
             this._connKnown = true;
-            this.updateServerStatusUI('offline', this.syncStatusText('local'));
+            this.hideSaveStatus();
             return;
         }
 
         this.server.dbUrl = url;
-        this.updateServerStatusUI('checking', this.syncStatusText('checking'));
+        this.hideSaveStatus();
 
         try {
             if (typeof firebase !== 'undefined' && firebase.initializeApp) {
@@ -1133,19 +1135,48 @@ const app = {
         this.startRestSync();
     },
 
+    isPermissionError(error) {
+        const text = String((error && (error.code || error.message)) || error || '');
+        return text.indexOf('PERMISSION_DENIED') !== -1 || text.indexOf('permission_denied') !== -1;
+    },
+
+    // 서버에 닿았다는 증거. .info/connected 의 첫 false 나 권한 오류보다 우선한다.
+    noteReachable() {
+        this._lastReachAt = Date.now();
+        clearTimeout(this._offlineTimer);
+        this._offlineTimer = null;
+        if (!this.server.isConnected) this.setConnected(true);
+    },
+
+    // 끊김은 바로 확정하지 않는다. 처음 붙기 전의 false 와 짧은 끊김을 걸러 낸다.
+    scheduleOffline() {
+        if (this._offlineTimer) return;
+        const wait = this._offlineGraceMs || 3000;
+        this._offlineTimer = setTimeout(() => {
+            this._offlineTimer = null;
+            if (this._lastReachAt && Date.now() - this._lastReachAt < wait) return;
+            if (this.server.isConnected) this.setConnected(false);
+        }, wait);
+    },
+
     bindSdk(db) {
         this._usingInfoConnected = true;
         this._valueHandler = (snapshot) => {
+            this.noteReachable();
             this.handleServerData(snapshot.val());
         };
         this.server.dbRef.on('value', this._valueHandler, (error) => {
+            if (this.isPermissionError(error)) {
+                console.warn('Firebase 읽기 권한이 없습니다. 연결 끊김으로 보지 않습니다.', error);
+                return;
+            }
             console.warn('Firebase SDK listener warning, using REST polling:', error);
-            this.setConnected(false);
             this.startRestSync();
         });
         this._infoRef = db.ref('.info/connected');
         this._infoHandler = (snapshot) => {
-            this.setConnected(snapshot.val() === true);
+            if (snapshot.val() === true) this.noteReachable();
+            else this.scheduleOffline();
         };
         this._infoRef.on('value', this._infoHandler);
     },
@@ -1265,56 +1296,29 @@ const app = {
         if (label) label.textContent = text || this.syncStatusText(status === 'online' ? 'online' : 'offline');
     },
 
-    showToast(message) {
-        const el = document.getElementById('sync-toast');
-        if (!el) return;
-        el.textContent = message;
-        el.classList.add('visible');
-        clearTimeout(this._toastTimer);
-        const wait = (typeof GolfSync !== 'undefined' && GolfSync.TOAST_MS) || 1600;
-        this._toastTimer = setTimeout(() => el.classList.remove('visible'), wait);
+    hideSaveStatus() {
+        const chip = document.getElementById('sync-status');
+        const label = document.getElementById('server-status-text');
+        if (chip) chip.classList.remove('visible');
+        if (label) label.textContent = '';
     },
 
-    showSyncFeedback(kind, options = {}) {
-        const text = this.syncStatusText(kind);
-        const dot = kind === 'saving' ? 'saving'
-            : kind === 'error' ? 'error'
-            : (kind === 'offline' || kind === 'local') ? 'offline'
-            : kind === 'checking' ? 'checking'
-            : 'online';
-        const wait = (typeof GolfSync !== 'undefined' && GolfSync.TOAST_MS) || 1600;
-        if (kind === 'saving' || kind === 'saved' || kind === 'error' || kind === 'offline') {
-            this._holdStatusUntil = Date.now() + wait;
-        }
-        this.updateServerStatusUI(dot, text);
-        if (options.toast) this.showToast(text);
-        if (kind === 'saved') {
-            clearTimeout(this._statusRevert);
-            this._statusRevert = setTimeout(() => {
-                if (this.server.isConnected && (!this.sync || this.sync.writesInFlight === 0) && !this._needsSync) {
-                    this._holdStatusUntil = 0;
-                    this.updateServerStatusUI('online', this.syncStatusText('online'));
-                }
-            }, wait);
-        }
+    showSaveStatus(kind) {
+        const chip = document.getElementById('sync-status');
+        const label = document.getElementById('server-status-text');
+        const failed = kind === 'error';
+        if (label) label.textContent = failed ? '저장 실패' : '저장됨';
+        if (chip) chip.className = `sync-status visible ${failed ? 'error' : 'saved'}`;
+        clearTimeout(this._statusRevert);
+        const wait = (typeof GolfSync !== 'undefined' && GolfSync.TOAST_MS) || 1500;
+        this._statusRevert = setTimeout(() => this.hideSaveStatus(), wait);
     },
 
     setConnected(on) {
-        const wasKnown = this._connKnown;
-        const prev = this.server.isConnected;
         this._connKnown = true;
         this.server.isConnected = !!on;
         if (this.sync) this.sync.connected = !!on;
-        if (!on) {
-            this._holdStatusUntil = 0;
-            this.updateServerStatusUI('offline', this.syncStatusText('offline'));
-            if (wasKnown && prev) this.showToast(this.syncStatusText('offline'));
-            return;
-        }
-        const holding = this._holdStatusUntil && Date.now() < this._holdStatusUntil;
-        if (!holding && (!this.sync || this.sync.writesInFlight === 0)) {
-            this.updateServerStatusUI('online', this.syncStatusText('online'));
-        }
+        if (!on) return;
         if (this._mockMode) this.pullMockSnapshot();
         const pendingWrite = this._needsSync || (this.sync && this.sync.hydrated && this.sync.nextUpdates(this.currentState()));
         if (pendingWrite) this.flushSync({ announce: !!this._announceNext });
@@ -1372,11 +1376,6 @@ const app = {
         if (!options) options = {};
         if (options.announce) this._announceNext = true;
         if (options.explicit) this._explicitToast = true;
-        if (options.announce || options.explicit) {
-            const hasServer = !!(this.server && (this.server.dbRef || this.server.dbUrl));
-            const offline = hasServer && this._connKnown && !this.server.isConnected;
-            this.showSyncFeedback(offline ? 'offline' : 'saving', { toast: true });
-        }
         clearTimeout(this._syncTimer);
         const wait = (typeof GolfSync !== 'undefined' && GolfSync.WRITE_DEBOUNCE_MS) || 500;
         this._syncTimer = setTimeout(() => this.flushSync(), wait);
@@ -1410,7 +1409,7 @@ const app = {
         this._announceNext = false;
         this._explicitToast = false;
         if (!this.sync || typeof GolfSync === 'undefined') {
-            if (announce || explicit) this.showSyncFeedback('saved', { toast: true });
+            if (announce || explicit) this.showSaveStatus('saved');
             return;
         }
 
@@ -1420,15 +1419,13 @@ const app = {
                 this.sync.hydrated = true;
                 this.sync.acked = GolfSync.cloneState(this.currentState());
             }
-            if (announce || explicit) this.showSyncFeedback('saved', { toast: true });
+            if (announce || explicit) this.showSaveStatus('saved');
             return;
         }
 
         if (!this.sync.hydrated) {
             this._needsSync = true;
             if (announce) this._announceNext = true;
-            if (!this._connKnown) this.updateServerStatusUI('checking', this.syncStatusText('checking'));
-            else if (!this.server.isConnected) this.showSyncFeedback('offline', { toast: announce || explicit });
             return;
         }
 
@@ -1437,42 +1434,33 @@ const app = {
         if (!this._connKnown && !this.server.isConnected) {
             this._needsSync = true;
             if (announce) this._announceNext = true;
-            this.updateServerStatusUI('checking', this.syncStatusText('checking'));
             return;
         }
         if (decision.action === 'defer') {
             this._needsSync = true;
             if (announce) this._announceNext = true;
-            this.showSyncFeedback('offline', { toast: announce || explicit });
             return;
         }
         if (decision.action !== 'write') {
-            if (explicit) this.showSyncFeedback('saved', { toast: true });
+            if (explicit) this.showSaveStatus('saved');
             return;
         }
 
         this.sync.beginWrite();
-        this.showSyncFeedback('saving', { toast: announce || explicit });
         try {
             await this.writeUpdates(updates);
             const follow = this.sync.finishWrite(true, this.currentState(), updates);
             this._needsSync = !!(follow && follow.dirty);
             this.persistSyncMeta();
-            this.showSyncFeedback('saved', { toast: announce || explicit });
+            if (announce || explicit) this.showSaveStatus('saved');
             if (follow && !follow.deferred) this.adoptSyncResult(follow);
         } catch (err) {
             const follow = this.sync.finishWrite(false, this.currentState(), updates);
             this._needsSync = true;
             if (announce) this._announceNext = true;
-            const offline = !this.server.isConnected || !!(err && err.offline);
             console.warn('sync failed', err);
-            if (offline) {
-                this.server.isConnected = false;
-                if (this.sync) this.sync.connected = false;
-                this.showSyncFeedback('offline', { toast: true });
-            } else {
-                this.showSyncFeedback('error', { toast: true });
-            }
+            if (err && err.offline) this.scheduleOffline();
+            this.showSaveStatus('error');
             if (follow && !follow.deferred) this.adoptSyncResult(follow);
         }
     },
@@ -1520,15 +1508,18 @@ const app = {
         if (!this.server.dbUrl || this._mockMode) return;
         try {
             const response = await fetch(`${this.server.dbUrl}/golf_namu.json`);
+            if (response.status === 401 || response.status === 403) {
+                return;
+            }
             if (!response.ok) {
-                this.setConnected(false);
+                this.scheduleOffline();
                 return;
             }
             const data = await response.json();
             this.handleServerData(data);
-            this.setConnected(true);
+            this.noteReachable();
         } catch (error) {
-            this.setConnected(false);
+            this.scheduleOffline();
             console.warn('Load from server failed:', error);
         }
     },

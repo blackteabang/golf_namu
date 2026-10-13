@@ -24,7 +24,7 @@
 (function (global) {
     var SCHEMA_VERSION = 2;
     var WRITE_DEBOUNCE_MS = 500;
-    var TOAST_MS = 2000;
+    var TOAST_MS = 1500;
 
     function emptyState() {
         return {
