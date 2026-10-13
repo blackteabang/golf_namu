@@ -128,8 +128,8 @@ await clientA.flushSync({ explicit: true, announce: true });
 await new Promise((resolve) => setTimeout(resolve, 30));
 
 assert.equal(clientB.players.length, 2, '다른 창에 참여자가 보여야 한다');
-assert.equal(clientA._doc.getElementById('sync-toast').textContent, '저장됨 ✓');
-assert.equal(clientA._doc.getElementById('server-status-text').textContent, '저장됨 ✓');
+assert.equal(clientA._doc.getElementById('server-status-text').textContent, '저장됨');
+assert.equal(clientA._doc.getElementById('sync-status').className.includes('visible'), true);
 
 clientA.assignRooms();
 await clientA.flushSync({ explicit: true });
@@ -156,7 +156,7 @@ assert.equal(score(clientA, '민수'), 4);
 assert.equal(score(clientA, '지연'), 9);
 assert.equal(score(clientB, '민수'), 4);
 assert.equal(score(clientB, '지연'), 9);
-assert.equal(clientA._doc.getElementById('sync-toast').textContent, '저장됨 ✓');
+assert.equal(clientA._doc.getElementById('server-status-text').textContent, '저장됨');
 
 const raw = JSON.parse(localStorage.getItem('golf_mock_db_v1'));
 assert.equal(raw.schemaVersion, 2);
@@ -167,14 +167,14 @@ assert.equal(Array.isArray(raw.players), false);
 clientA.setOnlineForDebug(false);
 clientA.updateScore(aMinsu.id, 12);
 await clientA.flushSync({ explicit: true });
-assert.equal(clientA._doc.getElementById('server-status-text').textContent, '오프라인 · 연결되면 저장');
+assert.equal(clientA._doc.getElementById('server-status-text').textContent.includes('오프라인'), false);
 assert.equal(JSON.parse(localStorage.getItem('golf_mock_db_v1')).scores[String(aMinsu.id)].score, 4);
 
 clientA.setOnlineForDebug(true);
 await clientA.flushSync({ explicit: true });
 await new Promise((resolve) => setTimeout(resolve, 40));
 assert.equal(score(clientB, '민수'), 12);
-assert.equal(clientA._doc.getElementById('sync-toast').textContent, '저장됨 ✓');
+assert.equal(clientA._doc.getElementById('server-status-text').textContent, '저장됨');
 
 clientA.removePlayer(bJiyun.id);
 await clientA.flushSync({ explicit: true });
