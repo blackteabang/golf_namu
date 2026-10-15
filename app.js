@@ -957,7 +957,7 @@ const app = {
         }
         this.statsPanels = (typeof GolfStats !== 'undefined' && GolfStats.normalizePanels)
             ? GolfStats.normalizePanels(saved)
-            : { root: true, mvp: true, rank: true, extra: false };
+            : { root: true, mvp: true, rank: true };
         return this.statsPanels;
     },
 
@@ -996,12 +996,6 @@ const app = {
         }[ch]));
     },
 
-    shortHistoryDate(date) {
-        const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(date || ''));
-        if (!match) return '';
-        return Number(match[2]) + '/' + Number(match[3]);
-    },
-
     renderHistoryStats() {
         const root = this.historyStats;
         if (!root || typeof GolfStats === 'undefined') return;
@@ -1012,84 +1006,71 @@ const app = {
         this.statsMonth = summary.month;
         const monthMode = this.statsScope === 'month';
         const ranking = monthMode ? summary.rankingMonth : summary.rankingAll;
-        const shown = this.statsExpanded ? ranking : ranking.slice(0, GolfStats.TOP_LIMIT || 5);
-        const mvpTitle = summary.isCurrentMonth ? '이달의 MVP' : `${GolfStats.monthNumberLabel(summary.month)} MVP`;
+        const limit = GolfStats.TOP_LIMIT || 5;
+        const shown = this.statsExpanded ? ranking : ranking.slice(0, limit);
         const mvp = summary.mvp;
-        const mvpSummary = mvp
-            ? `${mvp.name} · ${mvp.wins}승 · ${mvp.games}경기`
-            : '이 달의 경기가 없습니다';
-        const mvpHtml = mvp ? `
-            <p class="stats-mvp-name">🏆 ${this.escapeHtml(mvp.name)}${summary.mvpTieCount > 1 ? ` · 공동 ${summary.mvpTieCount}명` : ''}</p>
-            <p class="stats-mvp-meta">${mvp.wins}승 · ${mvp.games}경기</p>
-            <p class="stats-mvp-points">평균 ${this.escapeHtml(GolfStats.formatPoints(mvp.avgPoints, 1))}점 · 합계 ${this.escapeHtml(GolfStats.formatPoints(mvp.totalPoints))}점</p>
-        ` : '<p class="stats-empty">이 달의 경기가 없습니다.</p>';
-
-        const best = summary.bestRoundMonth;
         const most = summary.mostPlayedMonth;
-        const bestDate = best ? this.shortHistoryDate(best.date) : '';
-        const extraSummary = (best || most)
-            ? `${best ? `${best.name} ${GolfStats.formatPoints(best.points)}점` : '-'}${most ? ` · ${most.name} ${most.games}경기` : ''}`
-            : '이 달의 기록이 없습니다';
-        const extraHtml = `
-            <div class="stats-extra-row">
-                <div class="stats-extra">
-                    <p class="stats-kicker">최저 스코어</p>
-                    <p class="stats-extra-name">${best ? this.escapeHtml(best.name) : '-'}</p>
-                    <p class="stats-extra-value">${best ? `${this.escapeHtml(GolfStats.formatPoints(best.points))}점${bestDate ? ` · ${this.escapeHtml(bestDate)}` : ''}` : ''}</p>
-                </div>
-                <div class="stats-extra">
-                    <p class="stats-kicker">최다 참여</p>
-                    <p class="stats-extra-name">${most ? this.escapeHtml(most.name) : '-'}</p>
-                    <p class="stats-extra-value">${most ? `${most.games}경기 · ${most.wins}승` : ''}</p>
-                </div>
-            </div>
+        const highlightTitle = summary.isCurrentMonth
+            ? '이번 달'
+            : `${GolfStats.monthNumberLabel(summary.month)} 하이라이트`;
+        const highlightSummary = [
+            mvp ? `MVP ${mvp.name} ${mvp.wins}승` : '경기 없음',
+            most ? `참여 ${most.name} ${most.games}` : ''
+        ].filter(Boolean).join(' · ');
+        const spot = (kind, kicker, body) => `
+            <article class="stats-spot ${kind}">
+                <p class="stats-kicker">${kicker}</p>
+                ${body}
+            </article>
         `;
+        const mvpCard = mvp ? spot('mvp', '🏆 MVP', `
+            <p class="stats-spot-name">${this.escapeHtml(mvp.name)}</p>
+            ${summary.mvpTieCount > 1 ? `<p class="stats-spot-tie">공동 ${summary.mvpTieCount}명</p>` : ''}
+            <p class="stats-spot-main">${mvp.wins}<span>승</span></p>
+            <p class="stats-spot-sub">${mvp.games}경기 · 평균 ${this.escapeHtml(GolfStats.formatPoints(mvp.avgPoints, 1))}</p>
+        `) : spot('mvp', '🏆 MVP', '<p class="stats-spot-empty">이 달의 경기가 없습니다</p>');
+        const mostCard = most ? spot('play', '최다 참여', `
+            <p class="stats-spot-name">${this.escapeHtml(most.name)}</p>
+            <p class="stats-spot-main">${most.games}<span>경기</span></p>
+        `) : spot('play', '최다 참여', '<p class="stats-spot-empty">기록 없음</p>');
 
+        const placeBadge = (rank) => {
+            const medals = { 1: '🥇', 2: '🥈', 3: '🥉' };
+            if (medals[rank]) return `<span class="stats-place medal" aria-label="${rank}위">${medals[rank]}</span>`;
+            return `<span class="stats-place" aria-label="${rank}위">${rank}</span>`;
+        };
         const rows = shown.map((row, index) => {
             const rank = index + 1;
+            const tier = rank <= 3 ? ` tier-${rank}` : '';
             return `
-                <tr class="${rank === 1 ? 'rank-1' : ''}">
-                    <td class="name"><span class="stats-rank">${rank}</span><span class="name-text">${this.escapeHtml(row.name)}</span></td>
-                    <td>${row.games}</td>
-                    <td class="wins">${row.wins}</td>
-                    <td>${this.escapeHtml(GolfStats.formatWinRate(row.winRate))}</td>
-                    <td>${this.escapeHtml(GolfStats.formatPoints(row.avgPoints, 1))}</td>
-                    <td>${this.escapeHtml(GolfStats.formatPoints(row.totalPoints))}</td>
-                </tr>
+                <div class="stats-rank-row${tier}" role="row">
+                    ${placeBadge(rank)}
+                    <span class="stats-rank-name" role="cell">${this.escapeHtml(row.name)}</span>
+                    <span class="stats-rank-wins" role="cell">${row.wins}</span>
+                    <span class="stats-rank-avg" role="cell">${this.escapeHtml(GolfStats.formatPoints(row.avgPoints, 1))}</span>
+                </div>
             `;
         }).join('');
-        const tableHtml = ranking.length ? `
-            <div class="stats-table-wrap">
-                <table class="stats-table">
-                    <colgroup>
-                        <col class="col-name" style="width:30%">
-                        <col style="width:12%">
-                        <col style="width:10%">
-                        <col style="width:16%">
-                        <col style="width:16%">
-                        <col style="width:16%">
-                    </colgroup>
-                    <thead>
-                        <tr>
-                            <th>이름</th>
-                            <th>경기</th>
-                            <th>승</th>
-                            <th>승률</th>
-                            <th>평균</th>
-                            <th>합계</th>
-                        </tr>
-                    </thead>
-                    <tbody>${rows}</tbody>
-                </table>
+        const listHtml = ranking.length ? `
+            <div class="stats-rank-list" role="table" aria-label="누적 순위">
+                <div class="stats-rank-row stats-rank-labels" role="row">
+                    <span></span>
+                    <span role="columnheader">이름</span>
+                    <span role="columnheader">승수</span>
+                    <span role="columnheader" title="핸디를 적용한 스코어. 낮을수록 좋아요.">평균 스코어</span>
+                </div>
+                ${rows}
             </div>
-            ${ranking.length > (GolfStats.TOP_LIMIT || 5) ? `<button type="button" class="stats-more" data-stats="more">${this.statsExpanded ? '접기' : '더보기'}</button>` : ''}
+            ${ranking.length > limit ? `<button type="button" class="stats-more" data-stats="more">${this.statsExpanded ? '접기' : '더보기'}</button>` : ''}
         ` : `<p class="stats-empty">${monthMode ? '이 달의 경기가 없습니다.' : '저장된 기록이 없습니다.'}</p>`;
 
         const scopeNote = monthMode
             ? `${summary.monthLabel} · ${summary.gamesMonth}경기`
             : `전체 ${summary.gamesAll}경기`;
         const rankSummary = ranking.length ? `${ranking[0].name} 1위 · ${scopeNote}` : scopeNote;
-        const rootSummary = mvp ? `${mvpTitle} ${mvp.name} ${mvp.wins}승` : mvpSummary;
+        const rootSummary = mvp
+            ? `${summary.isCurrentMonth ? '이달의 MVP' : highlightTitle} ${mvp.name} ${mvp.wins}승`
+            : '이 달의 경기가 없습니다';
         const panel = (key) => this.loadStatsPanels()[key];
         const acc = (key) => this.statsPanelClass(key);
         root.innerHTML = `
@@ -1107,8 +1088,8 @@ const app = {
                             <section class="stats-card ${acc('mvp')}" data-panel="mvp">
                                 <button type="button" class="stats-acc-head" data-stats="toggle-mvp" aria-expanded="${panel('mvp') ? 'true' : 'false'}" aria-controls="stats-panel-mvp">
                                     <span class="stats-acc-copy">
-                                        <span class="stats-acc-title">${this.escapeHtml(mvpTitle)}</span>
-                                        <span class="stats-acc-summary">${this.escapeHtml(mvpSummary)}</span>
+                                        <span class="stats-acc-title">${this.escapeHtml(highlightTitle)}</span>
+                                        <span class="stats-acc-summary">${this.escapeHtml(highlightSummary)}</span>
                                     </span>
                                     <span class="stats-chevron" aria-hidden="true">▼</span>
                                 </button>
@@ -1123,7 +1104,10 @@ const app = {
                                             </div>
                                             <button type="button" class="stats-nav-btn" data-stats="next" aria-label="다음 달"${summary.canNext ? '' : ' disabled'}>▶</button>
                                         </div>
-                                        ${mvpHtml}
+                                        <div class="stats-highlights">
+                                            ${mvpCard}
+                                            ${mostCard}
+                                        </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1146,23 +1130,7 @@ const app = {
                                                 <button type="button" data-stats="scope-month" class="${monthMode ? 'active' : ''}" aria-pressed="${monthMode ? 'true' : 'false'}">${this.escapeHtml(GolfStats.monthNumberLabel(summary.month))}</button>
                                             </div>
                                         </div>
-                                        ${tableHtml}
-                                        </div>
-                                    </div>
-                                </div>
-                            </section>
-                            <section class="stats-card ${acc('extra')}" data-panel="extra">
-                                <button type="button" class="stats-acc-head" data-stats="toggle-extra" aria-expanded="${panel('extra') ? 'true' : 'false'}" aria-controls="stats-panel-extra">
-                                    <span class="stats-acc-copy">
-                                        <span class="stats-acc-title">최저 스코어 · 최다 참여</span>
-                                        <span class="stats-acc-summary">${this.escapeHtml(extraSummary)}</span>
-                                    </span>
-                                    <span class="stats-chevron" aria-hidden="true">▼</span>
-                                </button>
-                                <div class="stats-acc-body" id="stats-panel-extra">
-                                    <div class="stats-acc-inner">
-                                        <div class="stats-acc-content">
-                                        ${extraHtml}
+                                        ${listHtml}
                                         </div>
                                     </div>
                                 </div>

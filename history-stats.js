@@ -12,13 +12,11 @@
 //   승     : 그 경기의 우승 1명. 스코어가 가장 낮고, 같으면 핸디가 더 낮은 사람.
 //            스코어와 핸디까지 같으면 기록에 먼저 나온 한 명만 우승이다.
 //   경기   : 참가한 경기 수
-//   승률   : 승 / 경기
-//   평균·합계 : 스코어(net)의 평균과 합
+//   평균·합계 : 스코어(net)의 평균과 합. 평균이 낮을수록 좋다.
 //   이달의 MVP : 선택 월(Asia/Seoul) 최다 승 → 평균 스코어가 더 낮은 쪽 →
 //            그래도 같으면 합계 스코어가 더 낮은 쪽 → 이름 오름차순
-//   누적 순위 : 승이 많은 순, 같으면 승률이 높은 순, 그다음 평균 스코어가 낮은 순
-//   최저 스코어 : 한 경기 스코어가 가장 낮은 사람 (같으면 더 이른 날짜, 그다음 이름)
-//   최다 참여 : 경기 수가 가장 많은 사람 (같으면 승이 많은 쪽, 그다음 이름)
+//   누적 순위 : 승수(승)가 많은 순, 같으면 평균 스코어가 낮은 순, 그다음 이름
+//   최다 참여자 : 선택 월에 경기 수가 가장 많은 사람 (같으면 승이 많은 쪽, 그다음 이름)
 (function (global) {
     var SEOUL_TZ = 'Asia/Seoul';
     var TOP_LIMIT = 5;
@@ -152,18 +150,8 @@
         return best >= 0 ? entries[best].name : '';
     }
 
-    function betterRound(candidate, best) {
-        if (!best) return true;
-        if (candidate.points !== best.points) return candidate.points < best.points;
-        var dateA = candidate.date || '';
-        var dateB = best.date || '';
-        if (dateA !== dateB) return dateA < dateB;
-        return candidate.name < best.name;
-    }
-
     function accumulate(records) {
         var map = new Map();
-        var best = null;
         var games = 0;
         (records || []).forEach(function (record) {
             if (!record) return;
@@ -171,11 +159,6 @@
             if (!entries.length) return;
             games += 1;
             var winner = winnerName(entries);
-            var date = record.date ? String(record.date) : '';
-            if (!date) {
-                var time = recordTime(record);
-                if (time) date = seoulDateString(time);
-            }
             entries.forEach(function (entry) {
                 var points = netPoints(entry.player);
                 var row = map.get(entry.name);
@@ -186,14 +169,6 @@
                 row.games += 1;
                 row.totalPoints += points;
                 if (entry.name === winner) row.wins += 1;
-                var round = {
-                    name: entry.name,
-                    points: points,
-                    date: date,
-                    overPar: entry.player.score,
-                    handy: entry.player.handy
-                };
-                if (betterRound(round, best)) best = round;
             });
         });
         var players = Array.from(map.values()).map(function (row) {
@@ -211,7 +186,6 @@
         return {
             games: games,
             players: players,
-            bestRound: best,
             mostPlayed: most ? { name: most.name, games: most.games, wins: most.wins } : null
         };
     }
@@ -227,7 +201,6 @@
 
     function compareRanking(a, b) {
         if (b.wins !== a.wins) return b.wins - a.wins;
-        if (b.winRate !== a.winRate) return b.winRate - a.winRate;
         if (a.avgPoints !== b.avgPoints) return a.avgPoints - b.avgPoints;
         if (a.name < b.name) return -1;
         if (a.name > b.name) return 1;
@@ -315,23 +288,20 @@
             mvpTieCount: mvpTieCount,
             rankingAll: all.players,
             rankingMonth: monthStats.players,
-            bestRoundAll: all.bestRound,
-            bestRoundMonth: monthStats.bestRound,
             mostPlayedAll: all.mostPlayed,
             mostPlayedMonth: monthStats.mostPlayed,
             topLimit: TOP_LIMIT
         };
     }
 
-    // 처음 열면 통계 전체·이달의 MVP·누적 순위는 펼치고, 최저 스코어/최다 참여만 접는다.
-    var DEFAULT_PANELS = { root: true, mvp: true, rank: true, extra: false };
+    // 처음 열면 통계 전체, 이번 달 하이라이트, 누적 순위를 펼친다.
+    var DEFAULT_PANELS = { root: true, mvp: true, rank: true };
 
     function normalizePanels(saved) {
         var out = {
             root: DEFAULT_PANELS.root,
             mvp: DEFAULT_PANELS.mvp,
-            rank: DEFAULT_PANELS.rank,
-            extra: DEFAULT_PANELS.extra
+            rank: DEFAULT_PANELS.rank
         };
         if (!saved || typeof saved !== 'object') return out;
         Object.keys(out).forEach(function (key) {

@@ -54,8 +54,7 @@ function game(date, players, extra = {}) {
     assert.equal(gross.wins, 0);
     assert.equal(gross.totalPoints, 8);
     assert.equal(expected.totalPoints, 6);
-    assert.equal(summary.bestRoundMonth.name, '오버');
-    assert.equal(summary.bestRoundMonth.points, 4);
+    assert.equal(summary.mostPlayedMonth.name, '오버');
 }
 
 // 스코어가 같으면 핸디가 더 낮은 한 명만 우승. 완전 동점이면 앞에 있는 한 명만 우승.
@@ -179,7 +178,7 @@ function game(date, players, extra = {}) {
     assert.equal(tiedAverage.mvpTieCount, 1);
 }
 
-// 누적 순위는 전체 기간이 기본이고, 선택 월로 거르면 그 달만 남는다. 정렬은 승 → 승률 → 평균.
+// 누적 순위는 전체 기간이 기본이고, 선택 월로 거르면 그 달만 남는다. 정렬은 승수 → 평균 스코어.
 {
     const history = [
         game('2026-10-01', [player('씨', 1, 0), player('에이', 4, 0)]),
@@ -194,12 +193,11 @@ function game(date, players, extra = {}) {
     const summary = summarize(history, { now: NOW });
     assert.deepEqual(namesOf(summary.rankingAll), ['씨', '에이', '비', '디']);
     assert.equal(summary.rankingAll[0].wins, 3);
-    assert.equal(summary.rankingAll[0].winRate, 1);
+    assert.equal(summary.rankingAll[0].avgPoints, 1);
     assert.equal(summary.rankingAll[1].wins, 3);
     assert.equal(summary.rankingAll[1].games, 7);
-    assert.equal(summary.rankingAll[1].winRate, 3 / 7);
+    assert.ok(summary.rankingAll[1].avgPoints > summary.rankingAll[0].avgPoints);
     assert.equal(summary.rankingAll[2].wins, 2);
-    assert.equal(summary.rankingAll[2].winRate, 2 / 3);
     assert.deepEqual(namesOf(summary.rankingMonth), ['씨', '에이', '비']);
     assert.equal(summary.rankingMonth.find((row) => row.name === '디'), undefined);
 
@@ -231,7 +229,7 @@ function game(date, players, extra = {}) {
     assert.equal(september.mvp.name, '구월');
 }
 
-// 최저 스코어와 최다 참여. 빈 달로 이동할 수 있고, 미래 달은 현재 달로 붙인다.
+// 최다 참여자는 선택 월의 경기 수. 빈 달로 이동할 수 있고, 미래 달은 현재 달로 붙인다.
 {
     const history = [
         game('2026-08-19', [player('단골', 4, 0), player('손님', -8, 0)]),
@@ -240,27 +238,17 @@ function game(date, players, extra = {}) {
         game('2026-10-12', [player('단골', -3, 0), player('새얼굴', 1, 0)])
     ];
     const summary = summarize(history, { now: NOW });
-    assert.equal(summary.bestRoundMonth.name, '단골');
-    assert.equal(summary.bestRoundMonth.points, -3);
-    assert.equal(summary.bestRoundMonth.date, '2026-10-12');
-    assert.equal(summary.bestRoundAll.name, '손님');
-    assert.equal(summary.bestRoundAll.points, -8);
     assert.equal(summary.mostPlayedMonth.name, '단골');
     assert.equal(summary.mostPlayedMonth.games, 2);
     assert.equal(summary.mostPlayedAll.name, '단골');
     assert.equal(summary.mostPlayedAll.games, 4);
-
-    const sameBest = summarize([
-        game('2026-10-02', [player('나중', -4, 0), player('다른', 1, 0)]),
-        game('2026-10-01', [player('먼저', -4, 0), player('다른', 2, 0)])
-    ], { now: NOW });
-    assert.equal(sameBest.bestRoundMonth.name, '먼저');
+    assert.equal(summary.bestRoundMonth, undefined);
 
     const emptySeptember = summarize(history, { now: NOW, month: '2026-09' });
     assert.equal(emptySeptember.mvp, null);
     assert.equal(emptySeptember.gamesMonth, 0);
     assert.deepEqual(Array.from(emptySeptember.rankingMonth), []);
-    assert.equal(emptySeptember.bestRoundMonth, null);
+    assert.equal(emptySeptember.mostPlayedMonth, null);
     assert.equal(emptySeptember.canPrev, true);
     assert.equal(emptySeptember.canNext, true);
 
@@ -284,7 +272,8 @@ function game(date, players, extra = {}) {
     ], { now: NOW });
     assert.deepEqual(namesOf(summary.rankingMonth), ['찰리', '알파', '브라보']);
     assert.equal(summary.rankingMonth[1].wins, 0);
-    assert.equal(formatWinRate(summary.rankingMonth[0].winRate), '100%');
+    assert.equal(summary.rankingMonth[0].avgPoints, 1);
+    assert.equal(summary.rankingMonth[1].avgPoints, 2);
     assert.equal(formatWinRate(1 / 3), '33.3%');
     assert.equal(formatWinRate(0), '0%');
     assert.equal(formatPoints(2, 1), '+2.0');
@@ -307,18 +296,40 @@ function game(date, players, extra = {}) {
     assert.equal(raw.mvp.totalPoints, collapsed.mvp.totalPoints);
 }
 
+// 승수가 같으면 승률이 높아도 평균 스코어가 더 낮은 사람이 앞선다.
+{
+    const summary = summarize([
+        game('2026-10-01', [player('갑', 5, 0), player('병', 9, 0)]),
+        game('2026-10-02', [player('갑', 5, 0), player('병', 8, 0)]),
+        game('2026-10-03', [player('을', 0, 0), player('병', 4, 0)]),
+        game('2026-10-04', [player('을', 1, 0), player('병', 4, 0)]),
+        game('2026-10-05', [player('병', 0, 0), player('을', 3, 0)]),
+        game('2026-10-06', [player('병', 0, 0), player('을', 3, 0)])
+    ], { now: NOW });
+    const names = namesOf(summary.rankingMonth);
+    const gap = summary.rankingMonth.find((row) => row.name === '갑');
+    const eul = summary.rankingMonth.find((row) => row.name === '을');
+    assert.equal(names[0], '을');
+    assert.ok(names.indexOf('을') < names.indexOf('갑'));
+    assert.equal(gap.wins, 2);
+    assert.equal(eul.wins, 2);
+    assert.equal(gap.avgPoints, 5);
+    assert.equal(eul.avgPoints, (0 + 1 + 3 + 3) / 4);
+    assert.ok(gap.winRate > eul.winRate);
+}
+
 // 통계 아코디언 기본값. 저장된 값만 덮어쓰고 없는 칸은 기본을 유지한다.
 {
     const fresh = GolfStats.normalizePanels(null);
     assert.equal(fresh.root, true);
     assert.equal(fresh.mvp, true);
     assert.equal(fresh.rank, true);
-    assert.equal(fresh.extra, false);
+    assert.equal(Object.prototype.hasOwnProperty.call(fresh, 'extra'), false);
     const merged = GolfStats.normalizePanels({ root: false, extra: true, ignored: true, mvp: 'yes' });
     assert.equal(merged.root, false);
     assert.equal(merged.mvp, true);
     assert.equal(merged.rank, true);
-    assert.equal(merged.extra, true);
+    assert.equal(Object.prototype.hasOwnProperty.call(merged, 'extra'), false);
     assert.equal(fresh.root, true);
 }
 
