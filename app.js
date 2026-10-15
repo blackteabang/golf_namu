@@ -3,8 +3,11 @@ const app = {
     players: [],
     // 🎲 3명씩 짜여진 조들을 담아둘 바구니예요.
     rooms: [],
-    // 🏆 과거의 경기 우승자 기록들을 담아둘 바구니예요.
+    // 🏆 과거의 경기 기록이에요. 통계는 이 목록을 읽기만 하고, 선택 월은 화면에서만 기억해요.
     history: [],
+    statsMonth: null,
+    statsScope: 'all',
+    statsExpanded: false,
 
     // ☁️ 서버 (Firebase Realtime Database) 상태
     server: {
@@ -150,6 +153,7 @@ const app = {
         this.resultsBody = document.getElementById('results-body');
         this.restartBtn = document.getElementById('restart-btn');
         this.showHistoryBtn = document.getElementById('show-history-btn');
+        this.historyStats = document.getElementById('history-stats');
         this.historyContainer = document.getElementById('history-container');
 
         this.steps = {
@@ -167,6 +171,9 @@ const app = {
         this.viewResultsBtn.addEventListener('click', () => this.calculateRanking());
         this.restartBtn.addEventListener('click', () => this.restart());
         this.showHistoryBtn.addEventListener('click', () => this.showHistory());
+        if (this.historyStats) {
+            this.historyStats.addEventListener('click', (event) => this.onHistoryStatsClick(event));
+        }
 
         if (this.saveGameBtn) {
             this.saveGameBtn.addEventListener('click', () => {
@@ -895,6 +902,171 @@ const app = {
     },
 
     renderHistory() {
+        this.renderHistoryList();
+        try {
+            this.renderHistoryStats();
+        } catch (error) {
+            console.warn('기록 통계를 그리지 못했습니다.', error);
+        }
+    },
+
+    // 통계 버튼은 목록을 다시 그리지 않아서, 펼쳐 둔 경기 기록이 그대로 남아요.
+    onHistoryStatsClick(event) {
+        const source = event.target && event.target.closest ? event.target : (event.target && event.target.parentElement);
+        const button = source && source.closest ? source.closest('button') : null;
+        if (!button || !button.dataset || !button.dataset.stats || button.disabled) return;
+        const action = button.dataset.stats;
+        if (action === 'prev') this.shiftStatsMonth(-1);
+        else if (action === 'next') this.shiftStatsMonth(1);
+        else if (action === 'scope-all' || action === 'scope-month') {
+            this.statsScope = action === 'scope-month' ? 'month' : 'all';
+            this.statsExpanded = false;
+            this.renderHistoryStats();
+        } else if (action === 'more') {
+            this.statsExpanded = !this.statsExpanded;
+            this.renderHistoryStats();
+        }
+    },
+
+    shiftStatsMonth(delta) {
+        if (typeof GolfStats === 'undefined') return;
+        const summary = GolfStats.summarize(this.history || [], {
+            now: Date.now(),
+            month: this.statsMonth
+        });
+        const index = summary.months.indexOf(summary.month);
+        const next = summary.months[index + delta];
+        if (!next) return;
+        this.statsMonth = next;
+        this.statsExpanded = false;
+        this.renderHistoryStats();
+    },
+
+    escapeHtml(value) {
+        return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[ch]));
+    },
+
+    shortHistoryDate(date) {
+        const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(date || ''));
+        if (!match) return '';
+        return Number(match[2]) + '/' + Number(match[3]);
+    },
+
+    renderHistoryStats() {
+        const root = this.historyStats;
+        if (!root || typeof GolfStats === 'undefined') return;
+        const summary = GolfStats.summarize(this.history || [], {
+            now: Date.now(),
+            month: this.statsMonth
+        });
+        this.statsMonth = summary.month;
+        const monthMode = this.statsScope === 'month';
+        const ranking = monthMode ? summary.rankingMonth : summary.rankingAll;
+        const shown = this.statsExpanded ? ranking : ranking.slice(0, GolfStats.TOP_LIMIT || 5);
+        const mvpTitle = summary.isCurrentMonth ? '이달의 MVP' : `${GolfStats.monthNumberLabel(summary.month)} MVP`;
+        const mvp = summary.mvp;
+        const mvpHtml = mvp ? `
+            <p class="stats-kicker">${this.escapeHtml(mvpTitle)}${summary.mvpTieCount > 1 ? ` · 공동 ${summary.mvpTieCount}명` : ''}</p>
+            <p class="stats-mvp-name">🏆 ${this.escapeHtml(mvp.name)}</p>
+            <p class="stats-mvp-meta">${mvp.wins}승 · ${mvp.games}경기</p>
+            <p class="stats-mvp-points">평균 ${this.escapeHtml(GolfStats.formatPoints(mvp.avgPoints, 1))}점 · 합계 ${this.escapeHtml(GolfStats.formatPoints(mvp.totalPoints))}점</p>
+        ` : '<p class="stats-empty">이 달의 경기가 없습니다.</p>';
+
+        const best = summary.bestRoundMonth;
+        const most = summary.mostPlayedMonth;
+        const bestDate = best ? this.shortHistoryDate(best.date) : '';
+        const extraHtml = (best || most) ? `
+            <div class="stats-extra-row">
+                <div class="stats-card stats-extra">
+                    <p class="stats-kicker">최저 스코어</p>
+                    <p class="stats-extra-name">${best ? this.escapeHtml(best.name) : '-'}</p>
+                    <p class="stats-extra-value">${best ? `${this.escapeHtml(GolfStats.formatPoints(best.points))}점${bestDate ? ` · ${this.escapeHtml(bestDate)}` : ''}` : ''}</p>
+                </div>
+                <div class="stats-card stats-extra">
+                    <p class="stats-kicker">최다 참여</p>
+                    <p class="stats-extra-name">${most ? this.escapeHtml(most.name) : '-'}</p>
+                    <p class="stats-extra-value">${most ? `${most.games}경기 · ${most.wins}승` : ''}</p>
+                </div>
+            </div>
+        ` : '';
+
+        const rows = shown.map((row, index) => {
+            const rank = index + 1;
+            return `
+                <tr class="${rank === 1 ? 'rank-1' : ''}">
+                    <td class="name"><span class="stats-rank">${rank}</span><span class="name-text">${this.escapeHtml(row.name)}</span></td>
+                    <td>${row.games}</td>
+                    <td class="wins">${row.wins}</td>
+                    <td>${this.escapeHtml(GolfStats.formatWinRate(row.winRate))}</td>
+                    <td>${this.escapeHtml(GolfStats.formatPoints(row.avgPoints, 1))}</td>
+                    <td>${this.escapeHtml(GolfStats.formatPoints(row.totalPoints))}</td>
+                </tr>
+            `;
+        }).join('');
+        const tableHtml = ranking.length ? `
+            <div class="stats-table-wrap">
+                <table class="stats-table">
+                    <colgroup>
+                        <col class="col-name" style="width:30%">
+                        <col style="width:12%">
+                        <col style="width:10%">
+                        <col style="width:16%">
+                        <col style="width:16%">
+                        <col style="width:16%">
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th>이름</th>
+                            <th>경기</th>
+                            <th>승</th>
+                            <th>승률</th>
+                            <th>평균</th>
+                            <th>합계</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+            ${ranking.length > (GolfStats.TOP_LIMIT || 5) ? `<button type="button" class="stats-more" data-stats="more">${this.statsExpanded ? '접기' : '더보기'}</button>` : ''}
+        ` : `<p class="stats-empty">${monthMode ? '이 달의 경기가 없습니다.' : '저장된 기록이 없습니다.'}</p>`;
+
+        const scopeNote = monthMode
+            ? `${summary.monthLabel} · ${summary.gamesMonth}경기`
+            : `전체 ${summary.gamesAll}경기`;
+        root.innerHTML = `
+            <div class="stats-card stats-mvp-card">
+                <div class="stats-month-nav">
+                    <button type="button" class="stats-nav-btn" data-stats="prev" aria-label="이전 달"${summary.canPrev ? '' : ' disabled'}>◀</button>
+                    <div>
+                        <div class="stats-month-label">${this.escapeHtml(summary.monthLabel)}</div>
+                        <div class="stats-month-count">${summary.gamesMonth}경기</div>
+                    </div>
+                    <button type="button" class="stats-nav-btn" data-stats="next" aria-label="다음 달"${summary.canNext ? '' : ' disabled'}>▶</button>
+                </div>
+                ${mvpHtml}
+            </div>
+            ${extraHtml}
+            <div class="stats-card stats-rank-card">
+                <div class="stats-head">
+                    <h3 class="stats-title">누적 순위</h3>
+                    <div class="stats-scope" role="group" aria-label="순위 기간">
+                        <button type="button" data-stats="scope-all" class="${monthMode ? '' : 'active'}" aria-pressed="${monthMode ? 'false' : 'true'}">전체</button>
+                        <button type="button" data-stats="scope-month" class="${monthMode ? 'active' : ''}" aria-pressed="${monthMode ? 'true' : 'false'}">${this.escapeHtml(GolfStats.monthNumberLabel(summary.month))}</button>
+                    </div>
+                </div>
+                <p class="stats-scope-note">${this.escapeHtml(scopeNote)}</p>
+                ${tableHtml}
+            </div>
+        `;
+    },
+
+    renderHistoryList() {
         const expandedIds = new Set();
         document.querySelectorAll('.history-item.expanded').forEach(item => {
             if (item.dataset.id) expandedIds.add(item.dataset.id);

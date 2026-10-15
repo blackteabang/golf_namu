@@ -1005,6 +1005,264 @@ footer {
     color: var(--primary);
 }
 
+.history-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.history-stats + .history-list {
+    border-top: 1px solid rgba(15, 23, 42, 0.08);
+    padding-top: 14px;
+    margin-top: 12px;
+}
+
+.stats-card {
+    background: var(--item-bg);
+    border-radius: 16px;
+    padding: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+.stats-month-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.stats-nav-btn {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 auto;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: var(--text-main);
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.stats-nav-btn:active:not(:disabled) {
+    transform: scale(0.96);
+    background: #e2e8f0;
+}
+
+.stats-nav-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.stats-month-label {
+    text-align: center;
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--text-main);
+    line-height: 1.2;
+}
+
+.stats-month-count {
+    text-align: center;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+
+.stats-kicker {
+    font-size: 0.75rem;
+    font-weight: 800;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+
+.stats-mvp-name {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--primary);
+    line-height: 1.25;
+}
+
+.stats-mvp-meta,
+.stats-mvp-points {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--text-main);
+    line-height: 1.35;
+}
+
+.stats-mvp-points {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+}
+
+.stats-extra-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.stats-extra .stats-extra-name {
+    font-size: 0.98rem;
+    font-weight: 800;
+    color: var(--text-main);
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.stats-extra .stats-extra-value {
+    margin-top: 2px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    color: var(--primary);
+    line-height: 1.3;
+}
+
+.stats-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 2px;
+}
+
+.stats-title {
+    margin: 0;
+    font-size: 0.98rem;
+    font-weight: 800;
+    color: var(--text-main);
+}
+
+.stats-scope {
+    display: flex;
+    background: #f1f5f9;
+    border-radius: 999px;
+    padding: 2px;
+    flex: 0 0 auto;
+}
+
+.stats-scope button {
+    border: none;
+    background: transparent;
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-family: inherit;
+    font-size: 0.75rem;
+    font-weight: 800;
+    color: var(--text-muted);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.stats-scope button.active {
+    background: #ffffff;
+    color: var(--primary);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.stats-scope-note {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.stats-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.stats-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 0.74rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.stats-table th,
+.stats-table td {
+    padding: 7px 2px;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.stats-table th {
+    font-size: 0.68rem;
+    font-weight: 800;
+    color: var(--text-muted);
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.stats-table td {
+    border-bottom: 1px solid #f1f5f9;
+    color: var(--text-main);
+    font-weight: 600;
+}
+
+.stats-table th:first-child,
+.stats-table td.name {
+    text-align: left;
+}
+
+.stats-table td.wins {
+    font-weight: 800;
+}
+
+.stats-rank {
+    display: inline-block;
+    width: 1.05rem;
+    color: var(--text-muted);
+    font-weight: 800;
+}
+
+.stats-table .name-text {
+    display: inline-block;
+    max-width: calc(100% - 1.15rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+    font-weight: 800;
+}
+
+.stats-table tr.rank-1 .name-text {
+    color: var(--primary);
+}
+
+.stats-more {
+    width: 100%;
+    margin-top: 8px;
+    border: none;
+    background: #f8fafc;
+    border-radius: 10px;
+    padding: 10px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: var(--accent);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.stats-more:active {
+    background: #e2e8f0;
+}
+
+.stats-empty {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: 700;
+    padding: 8px 4px 4px;
+}
+
 /* ===== Custom Score Keypad ===== */
 #keypad-overlay {
     position: fixed;
