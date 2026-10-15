@@ -323,6 +323,23 @@
         };
     }
 
+    // 처음 열면 통계 전체·이달의 MVP·누적 순위는 펼치고, 최저 스코어/최다 참여만 접는다.
+    var DEFAULT_PANELS = { root: true, mvp: true, rank: true, extra: false };
+
+    function normalizePanels(saved) {
+        var out = {
+            root: DEFAULT_PANELS.root,
+            mvp: DEFAULT_PANELS.mvp,
+            rank: DEFAULT_PANELS.rank,
+            extra: DEFAULT_PANELS.extra
+        };
+        if (!saved || typeof saved !== 'object') return out;
+        Object.keys(out).forEach(function (key) {
+            if (typeof saved[key] === 'boolean') out[key] = saved[key];
+        });
+        return out;
+    }
+
     global.GolfStats = {
         SEOUL_TZ: SEOUL_TZ,
         TOP_LIMIT: TOP_LIMIT,
@@ -331,6 +348,8 @@
         formatWinRate: formatWinRate,
         monthLabel: monthLabel,
         monthNumberLabel: monthNumberLabel,
-        seoulMonthKey: seoulMonthKey
+        seoulMonthKey: seoulMonthKey,
+        defaultPanels: DEFAULT_PANELS,
+        normalizePanels: normalizePanels
     };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

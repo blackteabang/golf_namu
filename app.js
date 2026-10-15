@@ -8,6 +8,7 @@ const app = {
     statsMonth: null,
     statsScope: 'all',
     statsExpanded: false,
+    statsPanels: null,
 
     // ☁️ 서버 (Firebase Realtime Database) 상태
     server: {
@@ -916,6 +917,10 @@ const app = {
         const button = source && source.closest ? source.closest('button') : null;
         if (!button || !button.dataset || !button.dataset.stats || button.disabled) return;
         const action = button.dataset.stats;
+        if (action.indexOf('toggle-') === 0) {
+            this.toggleStatsPanel(action.slice('toggle-'.length));
+            return;
+        }
         if (action === 'prev') this.shiftStatsMonth(-1);
         else if (action === 'next') this.shiftStatsMonth(1);
         else if (action === 'scope-all' || action === 'scope-month') {
@@ -940,6 +945,45 @@ const app = {
         this.statsMonth = next;
         this.statsExpanded = false;
         this.renderHistoryStats();
+    },
+
+    loadStatsPanels() {
+        if (this.statsPanels) return this.statsPanels;
+        let saved = null;
+        try {
+            saved = JSON.parse(this.lsGet('golf_bet_stats_panels') || 'null');
+        } catch (error) {
+            saved = null;
+        }
+        this.statsPanels = (typeof GolfStats !== 'undefined' && GolfStats.normalizePanels)
+            ? GolfStats.normalizePanels(saved)
+            : { root: true, mvp: true, rank: true, extra: false };
+        return this.statsPanels;
+    },
+
+    saveStatsPanels() {
+        if (!this.statsPanels) return;
+        this.lsSet('golf_bet_stats_panels', JSON.stringify(this.statsPanels));
+    },
+
+    // 접고 펼 때는 목록을 다시 그리지 않고 클래스만 바꿔서 높이가 부드럽게 움직인다.
+    toggleStatsPanel(key) {
+        const panels = this.loadStatsPanels();
+        if (!Object.prototype.hasOwnProperty.call(panels, key)) return;
+        panels[key] = !panels[key];
+        this.saveStatsPanels();
+        const section = this.historyStats && this.historyStats.querySelector(`[data-panel="${key}"]`);
+        if (!section) {
+            this.renderHistoryStats();
+            return;
+        }
+        section.classList.toggle('open', !!panels[key]);
+        const button = section.querySelector(':scope > .stats-acc-head');
+        if (button) button.setAttribute('aria-expanded', panels[key] ? 'true' : 'false');
+    },
+
+    statsPanelClass(key) {
+        return this.loadStatsPanels()[key] ? 'stats-acc open' : 'stats-acc';
     },
 
     escapeHtml(value) {
@@ -971,9 +1015,11 @@ const app = {
         const shown = this.statsExpanded ? ranking : ranking.slice(0, GolfStats.TOP_LIMIT || 5);
         const mvpTitle = summary.isCurrentMonth ? '이달의 MVP' : `${GolfStats.monthNumberLabel(summary.month)} MVP`;
         const mvp = summary.mvp;
+        const mvpSummary = mvp
+            ? `${mvp.name} · ${mvp.wins}승 · ${mvp.games}경기`
+            : '이 달의 경기가 없습니다';
         const mvpHtml = mvp ? `
-            <p class="stats-kicker">${this.escapeHtml(mvpTitle)}${summary.mvpTieCount > 1 ? ` · 공동 ${summary.mvpTieCount}명` : ''}</p>
-            <p class="stats-mvp-name">🏆 ${this.escapeHtml(mvp.name)}</p>
+            <p class="stats-mvp-name">🏆 ${this.escapeHtml(mvp.name)}${summary.mvpTieCount > 1 ? ` · 공동 ${summary.mvpTieCount}명` : ''}</p>
             <p class="stats-mvp-meta">${mvp.wins}승 · ${mvp.games}경기</p>
             <p class="stats-mvp-points">평균 ${this.escapeHtml(GolfStats.formatPoints(mvp.avgPoints, 1))}점 · 합계 ${this.escapeHtml(GolfStats.formatPoints(mvp.totalPoints))}점</p>
         ` : '<p class="stats-empty">이 달의 경기가 없습니다.</p>';
@@ -981,20 +1027,23 @@ const app = {
         const best = summary.bestRoundMonth;
         const most = summary.mostPlayedMonth;
         const bestDate = best ? this.shortHistoryDate(best.date) : '';
-        const extraHtml = (best || most) ? `
+        const extraSummary = (best || most)
+            ? `${best ? `${best.name} ${GolfStats.formatPoints(best.points)}점` : '-'}${most ? ` · ${most.name} ${most.games}경기` : ''}`
+            : '이 달의 기록이 없습니다';
+        const extraHtml = `
             <div class="stats-extra-row">
-                <div class="stats-card stats-extra">
+                <div class="stats-extra">
                     <p class="stats-kicker">최저 스코어</p>
                     <p class="stats-extra-name">${best ? this.escapeHtml(best.name) : '-'}</p>
                     <p class="stats-extra-value">${best ? `${this.escapeHtml(GolfStats.formatPoints(best.points))}점${bestDate ? ` · ${this.escapeHtml(bestDate)}` : ''}` : ''}</p>
                 </div>
-                <div class="stats-card stats-extra">
+                <div class="stats-extra">
                     <p class="stats-kicker">최다 참여</p>
                     <p class="stats-extra-name">${most ? this.escapeHtml(most.name) : '-'}</p>
                     <p class="stats-extra-value">${most ? `${most.games}경기 · ${most.wins}승` : ''}</p>
                 </div>
             </div>
-        ` : '';
+        `;
 
         const rows = shown.map((row, index) => {
             const rank = index + 1;
@@ -1039,30 +1088,89 @@ const app = {
         const scopeNote = monthMode
             ? `${summary.monthLabel} · ${summary.gamesMonth}경기`
             : `전체 ${summary.gamesAll}경기`;
+        const rankSummary = ranking.length ? `${ranking[0].name} 1위 · ${scopeNote}` : scopeNote;
+        const rootSummary = mvp ? `${mvpTitle} ${mvp.name} ${mvp.wins}승` : mvpSummary;
+        const panel = (key) => this.loadStatsPanels()[key];
+        const acc = (key) => this.statsPanelClass(key);
         root.innerHTML = `
-            <div class="stats-card stats-mvp-card">
-                <div class="stats-month-nav">
-                    <button type="button" class="stats-nav-btn" data-stats="prev" aria-label="이전 달"${summary.canPrev ? '' : ' disabled'}>◀</button>
-                    <div>
-                        <div class="stats-month-label">${this.escapeHtml(summary.monthLabel)}</div>
-                        <div class="stats-month-count">${summary.gamesMonth}경기</div>
+            <section class="stats-block ${acc('root')}" data-panel="root">
+                <button type="button" class="stats-acc-head stats-root-head" data-stats="toggle-root" aria-expanded="${panel('root') ? 'true' : 'false'}" aria-controls="stats-panel-root">
+                    <span class="stats-acc-copy">
+                        <span class="stats-acc-title">통계</span>
+                        <span class="stats-acc-summary">${this.escapeHtml(rootSummary)}</span>
+                    </span>
+                    <span class="stats-chevron" aria-hidden="true">▼</span>
+                </button>
+                <div class="stats-acc-body" id="stats-panel-root">
+                    <div class="stats-acc-inner">
+                        <div class="stats-acc-stack">
+                            <section class="stats-card ${acc('mvp')}" data-panel="mvp">
+                                <button type="button" class="stats-acc-head" data-stats="toggle-mvp" aria-expanded="${panel('mvp') ? 'true' : 'false'}" aria-controls="stats-panel-mvp">
+                                    <span class="stats-acc-copy">
+                                        <span class="stats-acc-title">${this.escapeHtml(mvpTitle)}</span>
+                                        <span class="stats-acc-summary">${this.escapeHtml(mvpSummary)}</span>
+                                    </span>
+                                    <span class="stats-chevron" aria-hidden="true">▼</span>
+                                </button>
+                                <div class="stats-acc-body" id="stats-panel-mvp">
+                                    <div class="stats-acc-inner">
+                                        <div class="stats-acc-content">
+                                        <div class="stats-month-nav">
+                                            <button type="button" class="stats-nav-btn" data-stats="prev" aria-label="이전 달"${summary.canPrev ? '' : ' disabled'}>◀</button>
+                                            <div>
+                                                <div class="stats-month-label">${this.escapeHtml(summary.monthLabel)}</div>
+                                                <div class="stats-month-count">${summary.gamesMonth}경기</div>
+                                            </div>
+                                            <button type="button" class="stats-nav-btn" data-stats="next" aria-label="다음 달"${summary.canNext ? '' : ' disabled'}>▶</button>
+                                        </div>
+                                        ${mvpHtml}
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+                            <section class="stats-card ${acc('rank')}" data-panel="rank">
+                                <button type="button" class="stats-acc-head" data-stats="toggle-rank" aria-expanded="${panel('rank') ? 'true' : 'false'}" aria-controls="stats-panel-rank">
+                                    <span class="stats-acc-copy">
+                                        <span class="stats-acc-title">누적 순위</span>
+                                        <span class="stats-acc-summary">${this.escapeHtml(rankSummary)}</span>
+                                    </span>
+                                    <span class="stats-chevron" aria-hidden="true">▼</span>
+                                </button>
+                                <div class="stats-acc-body" id="stats-panel-rank">
+                                    <div class="stats-acc-inner">
+                                        <div class="stats-acc-content">
+                                        <div class="stats-head">
+                                            <p class="stats-scope-note">${this.escapeHtml(scopeNote)}</p>
+                                            <div class="stats-scope" role="group" aria-label="순위 기간">
+                                                <button type="button" data-stats="scope-all" class="${monthMode ? '' : 'active'}" aria-pressed="${monthMode ? 'false' : 'true'}">전체</button>
+                                                <button type="button" data-stats="scope-month" class="${monthMode ? 'active' : ''}" aria-pressed="${monthMode ? 'true' : 'false'}">${this.escapeHtml(GolfStats.monthNumberLabel(summary.month))}</button>
+                                            </div>
+                                        </div>
+                                        ${tableHtml}
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+                            <section class="stats-card ${acc('extra')}" data-panel="extra">
+                                <button type="button" class="stats-acc-head" data-stats="toggle-extra" aria-expanded="${panel('extra') ? 'true' : 'false'}" aria-controls="stats-panel-extra">
+                                    <span class="stats-acc-copy">
+                                        <span class="stats-acc-title">최저 스코어 · 최다 참여</span>
+                                        <span class="stats-acc-summary">${this.escapeHtml(extraSummary)}</span>
+                                    </span>
+                                    <span class="stats-chevron" aria-hidden="true">▼</span>
+                                </button>
+                                <div class="stats-acc-body" id="stats-panel-extra">
+                                    <div class="stats-acc-inner">
+                                        <div class="stats-acc-content">
+                                        ${extraHtml}
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
                     </div>
-                    <button type="button" class="stats-nav-btn" data-stats="next" aria-label="다음 달"${summary.canNext ? '' : ' disabled'}>▶</button>
                 </div>
-                ${mvpHtml}
-            </div>
-            ${extraHtml}
-            <div class="stats-card stats-rank-card">
-                <div class="stats-head">
-                    <h3 class="stats-title">누적 순위</h3>
-                    <div class="stats-scope" role="group" aria-label="순위 기간">
-                        <button type="button" data-stats="scope-all" class="${monthMode ? '' : 'active'}" aria-pressed="${monthMode ? 'false' : 'true'}">전체</button>
-                        <button type="button" data-stats="scope-month" class="${monthMode ? 'active' : ''}" aria-pressed="${monthMode ? 'true' : 'false'}">${this.escapeHtml(GolfStats.monthNumberLabel(summary.month))}</button>
-                    </div>
-                </div>
-                <p class="stats-scope-note">${this.escapeHtml(scopeNote)}</p>
-                ${tableHtml}
-            </div>
+            </section>
         `;
     },
 

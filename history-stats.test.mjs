@@ -307,4 +307,19 @@ function game(date, players, extra = {}) {
     assert.equal(raw.mvp.totalPoints, collapsed.mvp.totalPoints);
 }
 
+// 통계 아코디언 기본값. 저장된 값만 덮어쓰고 없는 칸은 기본을 유지한다.
+{
+    const fresh = GolfStats.normalizePanels(null);
+    assert.equal(fresh.root, true);
+    assert.equal(fresh.mvp, true);
+    assert.equal(fresh.rank, true);
+    assert.equal(fresh.extra, false);
+    const merged = GolfStats.normalizePanels({ root: false, extra: true, ignored: true, mvp: 'yes' });
+    assert.equal(merged.root, false);
+    assert.equal(merged.mvp, true);
+    assert.equal(merged.rank, true);
+    assert.equal(merged.extra, true);
+    assert.equal(fresh.root, true);
+}
+
 console.log('history stats tests passed');
