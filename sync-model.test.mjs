@@ -426,4 +426,164 @@ assert.equal(collapsed.history.length, 2);
     assert.equal(syncs, 0, 'migrateHistory는 서버에 바로 쓰지 않는다');
 }
 
+// --- 첫 스냅샷은 로컬 저장소의 옛 점수로 서버를 덮지 않는다 ---
+{
+    const sync = createSyncClient();
+    const local = state([player(1, '민수', 5, 3, { updatedAt: 500, scoreUpdatedAt: 500 })]);
+    sync.noteBaseline(local);
+    const raw = {
+        schemaVersion: 2,
+        players: { 1: { id: 1, name: '민수', handy: 5, isActive: true, updatedAt: 100 } },
+        scores: { 1: { score: 9, updatedAt: 100 } },
+        roomsUpdatedAt: 100
+    };
+    const result = sync.ingest(raw, local);
+    assert.equal(result.dirty, false);
+    assert.equal(result.state.players[0].score, 9);
+    assert.equal(result.state.players[0].scoreUpdatedAt, 100);
+}
+
+// 서버를 받은 뒤 이 폰에서 고친 점수는 유지된다.
+{
+    const sync = createSyncClient();
+    sync.hydrated = true;
+    sync.acked = state([player(1, '민수', 5, 9, { updatedAt: 100, scoreUpdatedAt: 100 })]);
+    const local = state([player(1, '민수', 5, 4, { updatedAt: 100, scoreUpdatedAt: 600 })]);
+    const raw = {
+        schemaVersion: 2,
+        players: { 1: { id: 1, name: '민수', handy: 5, isActive: true, updatedAt: 100 } },
+        scores: { 1: { score: 9, updatedAt: 100 } },
+        roomsUpdatedAt: 0
+    };
+    const result = sync.ingest(raw, local);
+    assert.equal(result.state.players[0].score, 4);
+    assert.equal(result.dirty, true);
+}
+
+// 값은 같은데 로컬 시계만 빠르면 서버 시각을 받아 다시 쓰지 않는다.
+{
+    const sync = createSyncClient();
+    sync.hydrated = true;
+    sync.acked = state([player(1, '민수', 5, 9, { updatedAt: 100, scoreUpdatedAt: 999999 })]);
+    const local = state([player(1, '민수', 5, 9, { updatedAt: 100, scoreUpdatedAt: 999999 })]);
+    const raw = {
+        schemaVersion: 2,
+        players: { 1: { id: 1, name: '민수', handy: 5, isActive: true, updatedAt: 100 } },
+        scores: { 1: { score: 9, updatedAt: 100 } },
+        roomsUpdatedAt: 0
+    };
+    const result = sync.ingest(raw, local);
+    assert.equal(result.state.players[0].score, 9);
+    assert.equal(result.state.players[0].scoreUpdatedAt, 100);
+    assert.equal(result.dirty, false);
+}
+
+// updatedAt 0 은 더 새로운 값이 아니다. 손대지 않은 칸은 서버(0 대 0 포함)를 따른다.
+{
+    const sync = createSyncClient();
+    sync.hydrated = true;
+    sync.acked = state([player(1, '민수', 1, null, { updatedAt: 0 })]);
+    const local = state([player(1, '민수', 1, null, { updatedAt: 0 })]);
+    const newerRemote = {
+        schemaVersion: 2,
+        players: { 1: { id: 1, name: '민수', handy: 4, isActive: true, updatedAt: 50 } },
+        roomsUpdatedAt: 0
+    };
+    const newer = sync.ingest(newerRemote, local);
+    assert.equal(newer.state.players[0].handy, 4);
+    assert.equal(newer.state.players[0].updatedAt, 50);
+
+    const syncZero = createSyncClient();
+    syncZero.hydrated = true;
+    syncZero.acked = state([player(1, '민수', 1, null, { updatedAt: 0 })]);
+    const zeroLocal = state([player(1, '민수', 1, null, { updatedAt: 0 })]);
+    const zeroRemote = {
+        schemaVersion: 2,
+        players: { 1: { id: 1, name: '민수', handy: 9, isActive: true, updatedAt: 0 } },
+        roomsUpdatedAt: 0
+    };
+    const zero = syncZero.ingest(zeroRemote, zeroLocal);
+    assert.equal(zero.state.players[0].handy, 9);
+}
+
+// 첫 화면에서 실제로 고친 칸만 서버보다 우선한다.
+{
+    const sync = createSyncClient();
+    const baseline = state([player(1, '민수', 5, 3, { updatedAt: 500, scoreUpdatedAt: 500 })]);
+    sync.noteBaseline(baseline);
+    sync.noteEdit();
+    const edited = state([player(1, '민수', 5, 4, { updatedAt: 500, scoreUpdatedAt: 600 })]);
+    const raw = {
+        schemaVersion: 2,
+        players: { 1: { id: 1, name: '민수', handy: 8, isActive: true, updatedAt: 100 } },
+        scores: { 1: { score: 9, updatedAt: 100 } },
+        roomsUpdatedAt: 0
+    };
+    const result = sync.ingest(raw, edited);
+    assert.equal(result.state.players[0].score, 4);
+    assert.equal(result.state.players[0].handy, 8);
+    assert.equal(result.dirty, true);
+}
+
+// 서버 타임스탬프 자리표시는 숫자 시각으로 돌아온다. schemaVersion 은 그대로다.
+{
+    const stamped = GolfSync.stampForServer({
+        schemaVersion: 2,
+        roomsUpdatedAt: 10,
+        'scores/1': { score: 3, updatedAt: 50 },
+        players: { 1: { id: 1, name: '민수', handy: 5, isActive: true, updatedAt: 50 } },
+        'history/sess_a': { id: 1, savedAt: 50, date: '2026-10-12', round: 1, sessionId: 'sess_a', players: [] }
+    });
+    jsonEqual(stamped['scores/1'].updatedAt, { '.sv': 'timestamp' });
+    jsonEqual(stamped.players['1'].updatedAt, { '.sv': 'timestamp' });
+    jsonEqual(stamped['history/sess_a'].savedAt, { '.sv': 'timestamp' });
+    jsonEqual(stamped.roomsUpdatedAt, { '.sv': 'timestamp' });
+    assert.equal(stamped.schemaVersion, 2);
+    assert.equal(stamped['scores/1'].score, 3);
+    const resolved = GolfSync.resolveServerStamps(stamped, 123);
+    assert.equal(resolved['scores/1'].updatedAt, 123);
+    assert.equal(resolved.players['1'].updatedAt, 123);
+    assert.equal(resolved['history/sess_a'].savedAt, 123);
+    assert.equal(resolved.roomsUpdatedAt, 123);
+    assert.equal(resolved.schemaVersion, 2);
+}
+
+// 화면은 더 최신 쪽이 이기고, 같은 화면이면 서버 시계로 맞춘다.
+{
+    const sync = createSyncClient();
+    sync.hydrated = true;
+    sync.acked = state([player(1, '민수', 5, null, { updatedAt: 1 })]);
+    sync.acked.live = { step: 'rooms', sessionId: 'sess_a', sessionOrigin: 'new', updatedAt: 10 };
+    const local = state([player(1, '민수', 5, null, { updatedAt: 1 })]);
+    local.live = { step: 'rooms', sessionId: 'sess_a', sessionOrigin: 'new', updatedAt: 999999 };
+    const remoteStep = {
+        schemaVersion: 2,
+        players: { 1: { id: 1, name: '민수', handy: 5, isActive: true, updatedAt: 1 } },
+        roomsUpdatedAt: 0,
+        live: { step: 'results', sessionId: 'sess_a', sessionOrigin: 'new', updatedAt: 20 }
+    };
+    const stepped = sync.ingest(remoteStep, local);
+    assert.equal(stepped.state.live.step, 'results');
+    assert.equal(stepped.state.live.updatedAt, 20);
+
+    const syncSame = createSyncClient();
+    syncSame.hydrated = true;
+    syncSame.acked = state([player(1, '민수', 5, null, { updatedAt: 1 })]);
+    syncSame.acked.live = { step: 'rooms', sessionId: 'sess_a', sessionOrigin: 'new', updatedAt: 999999 };
+    const sameLocal = state([player(1, '민수', 5, null, { updatedAt: 1 })]);
+    sameLocal.live = { step: 'rooms', sessionId: 'sess_a', sessionOrigin: 'new', updatedAt: 999999 };
+    const sameRemote = {
+        schemaVersion: 2,
+        players: { 1: { id: 1, name: '민수', handy: 5, isActive: true, updatedAt: 1 } },
+        roomsUpdatedAt: 0,
+        live: { step: 'rooms', sessionId: 'sess_a', sessionOrigin: 'new', updatedAt: 50 }
+    };
+    const healed = syncSame.ingest(sameRemote, sameLocal);
+    assert.equal(healed.state.live.step, 'rooms');
+    assert.equal(healed.state.live.updatedAt, 50);
+    assert.equal(healed.dirty, false);
+}
+
+assert.equal(GolfSync.REST_POLL_MS, 1500);
+
 console.log('sync-model tests passed');

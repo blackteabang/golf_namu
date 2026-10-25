@@ -715,6 +715,15 @@ footer {
     font-weight: 600;
 }
 
+#app-version {
+    display: inline-block;
+    margin-left: 0.35rem;
+    color: #94a3b8;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
 .btn-history {
     background: var(--item-bg);
     border: none;

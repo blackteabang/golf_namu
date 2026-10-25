@@ -176,6 +176,13 @@ await new Promise((resolve) => setTimeout(resolve, 40));
 assert.equal(score(clientB, '민수'), 12);
 assert.equal(clientA._doc.getElementById('server-status-text').textContent, '저장됨');
 
+clientA.showStep('results');
+await clientA.flushSync({ explicit: true });
+await new Promise((resolve) => setTimeout(resolve, 40));
+assert.equal(clientA.currentStep, 'results');
+assert.equal(clientB.currentStep, 'results', '최종 랭킹 화면이 다른 창에 전달된다');
+assert.equal(clientB.gameSessionId, clientA.gameSessionId);
+
 clientA.removePlayer(bJiyun.id);
 await clientA.flushSync({ explicit: true });
 await new Promise((resolve) => setTimeout(resolve, 40));
