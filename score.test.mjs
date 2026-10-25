@@ -19,7 +19,8 @@ const {
     parseHandicap,
     getNetScore,
     formatNet,
-    compareRank
+    compareRank,
+    rankPlayers
 } = GolfScore;
 
 // --- 사용자 재현 케이스 (핵심 버그) ---
@@ -64,11 +65,50 @@ assert.equal(ranked[1].name, 'A');
 const tieLow = { name: 'lowH', score: 2, handy: -4 }; // net 6
 const tieHigh = { name: 'highH', score: 10, handy: 4 }; // net 6
 const tied = [tieHigh, tieLow].sort((x, y) => compareRank(x, y, false));
-assert.equal(tied[0].name, 'lowH', '동점이면 핸디가 더 낮은(-4) 쪽이 앞선다');
+assert.equal(tied[0].name, 'lowH', '스코어가 같으면 핸디가 더 낮은(-4) 쪽이 앞선다');
+assert.deepEqual(Array.from(rankPlayers([tieHigh, tieLow], false).ranks), [1, 2], '핸디가 다르면 공동 순위가 아니다');
+
+const tiedSame = rankPlayers([
+    { name: '나중', score: 13, handy: 6 },
+    { name: '먼저', score: 13, handy: 6 }
+], false);
+assert.deepEqual(Array.from(tiedSame.players, (p) => p.name), ['나중', '먼저'], '스코어와 핸디가 같으면 입력 순서');
+assert.deepEqual(Array.from(tiedSame.ranks), [1, 1]);
+assert.deepEqual(Array.from(rankPlayers([
+    { name: '가', score: 1, handy: 0 },
+    { name: '나', score: 1, handy: 0 },
+    { name: '다', score: 1, handy: 0 },
+    { name: '라', score: 4, handy: 0 }
+], false).ranks), [1, 1, 1, 4], '공동 1위 셋이면 다음은 4위');
 
 const midEntered = { name: 'entered', score: 8, handy: 0 };
 const midEmpty = { name: 'empty', score: null, handy: 0 };
 const mid = [midEmpty, midEntered].sort((x, y) => compareRank(x, y, true));
 assert.equal(mid[0].name, 'entered', '중간 순위에서는 미입력 선수를 뒤로');
+assert.deepEqual(Array.from(rankPlayers([
+    { name: 'even', score: 0, handy: 0 },
+    { name: 'blank', score: null, handy: 0 },
+    { name: 'blank2', score: null, handy: 0 }
+], true).ranks), [1, 2, 3], '미입력은 0점과 공동이 아니다');
+
+// 실데이터: 스코어가 같아도 핸디가 낮으면 앞선다. 나무·굿샷만 스코어와 핸디가 같아 공동 5위.
+const live = [
+    ['핸디깡패', 12, 11],
+    ['골프만', 1, -1],
+    ['짱창', 4, -1],
+    ['이글버디', 13, 8],
+    ['나무', 13, 6],
+    ['굿샷', 13, 6],
+    ['돌풍', 18, 11],
+    ['드기네', 8, -1],
+    ['내멋대로까', 13, 4],
+    ['용사장', 18, 9],
+    ['유리', 16, 6],
+    ['또봉이', 12, 1]
+].map(([name, score, handy]) => ({ name, score, handy }));
+const liveRank = rankPlayers(live, false);
+assert.deepEqual(Array.from(liveRank.players, (p) => p.name), live.map((p) => p.name));
+assert.deepEqual(Array.from(liveRank.ranks), [1, 2, 3, 4, 5, 5, 7, 8, 9, 10, 11, 12]);
+assert.deepEqual(Array.from(rankPlayers([live[3], live[2]], false).players, (p) => p.name), ['짱창', '이글버디']);
 
 console.log('score tests passed');

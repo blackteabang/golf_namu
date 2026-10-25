@@ -57,7 +57,7 @@ function game(date, players, extra = {}) {
     assert.equal(summary.mostPlayedMonth.name, '오버');
 }
 
-// 스코어가 같으면 핸디가 더 낮은 한 명만 우승. 완전 동점이면 앞에 있는 한 명만 우승.
+// 스코어가 같으면 핸디가 더 낮은 한 명만 우승. 스코어와 핸디가 모두 같으면 각자 1승.
 {
     const summary = summarize([
         game('2026-10-10', [
@@ -74,9 +74,25 @@ function game(date, players, extra = {}) {
     assert.equal(summary.rankingMonth.find((row) => row.name === '낮은핸디').totalPoints, 6);
     assert.equal(summary.rankingMonth.find((row) => row.name === '높은핸디').totalPoints, 6);
     assert.equal(summary.rankingMonth.find((row) => row.name === '먼저').wins, 1);
-    assert.equal(summary.rankingMonth.find((row) => row.name === '나중').wins, 0);
+    assert.equal(summary.rankingMonth.find((row) => row.name === '나중').wins, 1);
     assert.equal(summary.gamesMonth, 2);
-    assert.equal(summary.rankingMonth.reduce((sum, row) => sum + row.wins, 0), 2);
+    assert.equal(summary.rankingMonth.reduce((sum, row) => sum + row.wins, 0), 3);
+    assert.equal(summary.mvpTieCount, 2);
+}
+
+// 같은 +7이라도 핸디가 더 높으면 승이 아니다. 핸디까지 같으면 둘 다 승.
+{
+    const summary = summarize([
+        game('2026-10-15', [
+            player('나무', 13, 6),
+            player('굿샷', 13, 6),
+            player('돌풍', 18, 11)
+        ])
+    ], { now: NOW });
+    assert.equal(summary.rankingMonth.find((row) => row.name === '나무').wins, 1);
+    assert.equal(summary.rankingMonth.find((row) => row.name === '굿샷').wins, 1);
+    assert.equal(summary.rankingMonth.find((row) => row.name === '돌풍').wins, 0);
+    assert.equal(summary.mvpTieCount, 2);
 }
 
 // 한 경기 안에서는 같은 이름을 한 번만 세고, 더 좋은 스코어를 쓴다.
