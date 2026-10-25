@@ -156,6 +156,14 @@ assert.equal(score(clientA, '민수'), 4);
 assert.equal(score(clientA, '지연'), 9);
 assert.equal(score(clientB, '민수'), 4);
 assert.equal(score(clientB, '지연'), 9);
+
+clientB.players.find((player) => player.name === '민수').score = 99;
+clientB.showStep('results');
+await clientB.refreshFromServer();
+assert.equal(score(clientB, '민수'), 4, '새로고침은 서버 점수를 다시 가져온다');
+assert.equal(clientB.currentStep, 'results');
+assert.equal(clientB._doc.getElementById('server-status-text').textContent, '최신 데이터 불러옴');
+assert.equal(JSON.parse(localStorage.getItem('golf_mock_db_v1')).scores[String(aMinsu.id)].score, 4);
 assert.equal(clientA._doc.getElementById('server-status-text').textContent, '저장됨');
 
 const raw = JSON.parse(localStorage.getItem('golf_mock_db_v1'));

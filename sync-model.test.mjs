@@ -586,4 +586,24 @@ assert.equal(collapsed.history.length, 2);
 
 assert.equal(GolfSync.REST_POLL_MS, 1500);
 
+// 새로고침은 로컬에 더 새로운 시각이 있어도 서버 값을 그대로 쓴다.
+{
+    const sync = createSyncClient();
+    sync.hydrated = true;
+    sync.acked = state([player(1, '민수', 5, 3, { updatedAt: 900, scoreUpdatedAt: 900 })]);
+    const raw = {
+        schemaVersion: 2,
+        players: { 1: { id: 1, name: '민수', handy: 11, isActive: true, updatedAt: 100 } },
+        scores: { 1: { score: 9, updatedAt: 100 } },
+        roomsUpdatedAt: 40,
+        live: { step: 'results', sessionId: 'sess_a', sessionOrigin: 'new', updatedAt: 40 }
+    };
+    const replaced = sync.replaceWithRemote(raw);
+    assert.equal(replaced.dirty, false);
+    assert.equal(replaced.state.players[0].score, 9);
+    assert.equal(replaced.state.players[0].handy, 11);
+    assert.equal(replaced.state.live.step, 'results');
+    assert.equal(sync.nextUpdates(replaced.state), null);
+}
+
 console.log('sync-model tests passed');

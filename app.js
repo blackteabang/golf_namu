@@ -1,6 +1,6 @@
 const app = {
     // 푸터에 보이는 버전. 캐시된 예전 스크립트면 이 숫자가 안 바뀐다.
-    APP_VERSION: '20261025b',
+    APP_VERSION: '20261026a',
     // 👥 선수들의 정보(이름, 핸디캡 등)를 담아둘 빈 바구니(배열)예요.
     players: [],
     // 🎲 3명씩 짜여진 조들을 담아둘 바구니예요.
@@ -177,6 +177,8 @@ const app = {
         this.viewResultsBtn.addEventListener('click', () => this.calculateRanking());
         this.restartBtn.addEventListener('click', () => this.restart());
         this.showHistoryBtn.addEventListener('click', () => this.showHistory());
+        const refreshBtn = document.getElementById('refresh-server-btn');
+        if (refreshBtn) refreshBtn.addEventListener('click', () => this.refreshFromServer());
         if (this.historyStats) {
             this.historyStats.addEventListener('click', (event) => this.onHistoryStatsClick(event));
         }
@@ -1650,14 +1652,78 @@ const app = {
     },
 
     showSaveStatus(kind) {
+        this.showToast(kind === 'error' ? '저장 실패' : '저장됨');
+    },
+
+    showToast(text) {
         const chip = document.getElementById('sync-status');
         const label = document.getElementById('server-status-text');
-        const failed = kind === 'error';
-        if (label) label.textContent = failed ? '저장 실패' : '저장됨';
+        const failed = text === '저장 실패' || text === '불러오지 못함';
+        if (label) label.textContent = text;
         if (chip) chip.className = `sync-status visible ${failed ? 'error' : 'saved'}`;
         clearTimeout(this._statusRevert);
         const wait = (typeof GolfSync !== 'undefined' && GolfSync.TOAST_MS) || 1500;
         this._statusRevert = setTimeout(() => this.hideSaveStatus(), wait);
+    },
+
+    // 서버에 있는 최신 값을 지금 화면에 그대로 가져온다. 로컬에만 있던 값은 따르지 않는다.
+    async refreshFromServer() {
+        if (this._refreshing) return;
+        this._refreshing = true;
+        const button = document.getElementById('refresh-server-btn');
+        if (button) button.disabled = true;
+        clearTimeout(this._syncTimer);
+        this._syncTimer = null;
+        this._needsSync = false;
+        try {
+            const data = await this.fetchServerSnapshot();
+            const stayStep = this.currentStep;
+            const stayMid = !!this._resultsMidGame;
+            if (this.sync && this.sync.replaceWithRemote) {
+                const result = this.sync.replaceWithRemote(data);
+                this.adoptSyncResult(result);
+            }
+            if (stayStep && this.currentStep !== stayStep) this.showStep(stayStep, { remote: true });
+            this._resultsMidGame = stayMid;
+            this.rerenderCurrentScreen();
+            this.showToast('최신 데이터 불러옴');
+        } catch (err) {
+            console.warn('refresh failed', err);
+            this.showToast('불러오지 못함');
+        } finally {
+            this._refreshing = false;
+            if (button) button.disabled = false;
+        }
+    },
+
+    async fetchServerSnapshot() {
+        if (this._mockMode) {
+            if (!this._mock || !this._mock.pull) return null;
+            return this._mock.pull();
+        }
+        if (!this.server.dbUrl) {
+            const error = new Error('no server');
+            error.offline = true;
+            throw error;
+        }
+        const signal = (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(8000) : undefined;
+        const response = await fetch(`${this.server.dbUrl}/golf_namu.json`, { cache: 'no-store', signal });
+        if (!response.ok) {
+            const error = new Error('refresh failed ' + response.status);
+            error.status = response.status;
+            throw error;
+        }
+        return response.json();
+    },
+
+    rerenderCurrentScreen() {
+        if (this.playerList) this.renderPlayerList();
+        if (this.currentStep === 'results') {
+            this.calculateRanking(false, !!this._resultsMidGame, { remote: true });
+            return;
+        }
+        if (this.currentStep === 'rooms' && this.rooms && this.rooms.length) this.renderRooms();
+        if (this.currentStep === 'history' && this.historyContainer) this.renderHistory();
     },
 
     setConnected(on) {

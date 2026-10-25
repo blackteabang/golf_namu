@@ -1013,6 +1013,26 @@
                 client.hasSessionEdits = true;
             },
 
+            // 새로고침은 합치지 않고 서버 스냅샷을 그대로 현재 상태로 삼는다.
+            replaceWithRemote: function (raw) {
+                var parsed = stateFromSnapshot(raw);
+                var remote = parsed.state || emptyState();
+                client.acked = cloneState(remote);
+                client.lastGood = cloneState(remote);
+                client.hydrated = true;
+                client.migrationNeeded = false;
+                client.pendingRemote = undefined;
+                client.hasPending = false;
+                return {
+                    deferred: false,
+                    state: cloneState(remote),
+                    changed: true,
+                    dirty: false,
+                    migrationNeeded: false,
+                    format: parsed.format
+                };
+            },
+
             // 앱을 연 직후의 로컬 상태. 그 뒤 사용자가 고친 칸만 첫 스냅샷과 겨룬다.
             noteBaseline: function (state) {
                 client.baseline = cloneState(state || emptyState());
