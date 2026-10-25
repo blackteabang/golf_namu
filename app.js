@@ -1,4 +1,6 @@
 const app = {
+    // 푸터에 보이는 버전. 캐시된 예전 스크립트면 이 숫자가 안 바뀐다.
+    APP_VERSION: '20261026a',
     // 👥 선수들의 정보(이름, 핸디캡 등)를 담아둘 빈 바구니(배열)예요.
     players: [],
     // 🎲 3명씩 짜여진 조들을 담아둘 바구니예요.
@@ -53,7 +55,10 @@ const app = {
         this.bindEvents(); // 버튼을 눌렀을 때 어떤 행동을 할지 귀를 달아줘요.
         this.loadFromStorage(); // 컴퓨터 비밀창고(로컬 스토리지)에서 예전 기록을 불러와요.
         this.migrateHistory(); // 기존 기록을 최신 스코어/순위 기준으로 업데이트해요.
+        if (this.sync && this.sync.noteBaseline) this.sync.noteBaseline(this.currentState());
         this.initServer(); // 클라우드 서버와 연결하고 최신 데이터를 불러와요.
+        this.showAppVersion();
+        this.dropStaleWorkers();
         this.renderPlayerList(); // 화면에 선수들 이름을 예쁘게 그려줘요.
         window.addEventListener('pagehide', () => {
             if (this._syncTimer) this.flushSync({ announce: false });
@@ -65,12 +70,12 @@ const app = {
         if (this.rooms && this.rooms.length > 0) {
             this.renderRooms();
             if (savedStep === 'results') {
-                this.calculateRanking(false);
+                this.calculateRanking(false, false, { silent: true });
             } else {
-                this.showStep('rooms'); // 게임 중 화면으로 유지!
+                this.showStep('rooms', { silent: true }); // 켠 직후에는 다른 폰의 화면을 끌어오지 않아요.
             }
         } else {
-            this.showStep('players'); // 처음 온 거면 선수 등록 화면을 보여줘요.
+            this.showStep('players', { silent: true });
         }
     },
 
@@ -172,6 +177,8 @@ const app = {
         this.viewResultsBtn.addEventListener('click', () => this.calculateRanking());
         this.restartBtn.addEventListener('click', () => this.restart());
         this.showHistoryBtn.addEventListener('click', () => this.showHistory());
+        const refreshBtn = document.getElementById('refresh-server-btn');
+        if (refreshBtn) refreshBtn.addEventListener('click', () => this.refreshFromServer());
         if (this.historyStats) {
             this.historyStats.addEventListener('click', (event) => this.onHistoryStatsClick(event));
         }
@@ -180,6 +187,7 @@ const app = {
             this.saveGameBtn.addEventListener('click', () => {
                 this.saveToStorage();
                 this.saveCurrentGameToStorage();
+                this.publishLive(this.currentStep || 'rooms');
                 this.flushSync({ explicit: true, announce: true });
             });
         }
@@ -835,8 +843,9 @@ const app = {
     },
 
     // 🥇 최종 점수를 계산해서 1등부터 꼴찌까지 순위를 매기는 기능이에요.
-    calculateRanking(askConfirm = true, isMidGame = false) {
+    calculateRanking(askConfirm = true, isMidGame = false, stepOptions = {}) {
         const activePlayers = this.players.filter(p => p.isActive);
+        this._resultsMidGame = !!isMidGame;
         
         // 아직 점수를 안 적은 사람이 있는지 검사해요. (0타는 유효한 이븐파 스코어이므로 제외)
         const missingScores = activePlayers.some(p => !this.hasScore(p));
@@ -850,7 +859,7 @@ const app = {
             this.saveToHistory(ranking.players);
         }
         this.renderResults(ranking.players, ranking.ranks, isMidGame);
-        this.showStep('results');
+        this.showStep('results', stepOptions || {});
     },
 
     // 📸 최종 순위를 기록해요.
@@ -1231,14 +1240,81 @@ const app = {
         });
     },
 
-    showStep(stepName) {
+    showStep(stepName, options = {}) {
+        const previous = this.currentStep;
         this.currentStep = stepName;
         this.lsSet('golf_bet_current_step', stepName);
-        Object.values(this.steps).forEach(step => step.classList.remove('active'));
+        Object.values(this.steps).forEach(step => {
+            if (step && step.classList) step.classList.remove('active');
+        });
         if (this.steps[stepName]) {
             this.steps[stepName].classList.add('active');
         }
-        window.scrollTo(0, 0);
+        if (window.scrollTo) window.scrollTo(0, 0);
+        const userNav = !options.remote && !options.silent && !this._applyingRemoteStep;
+        if (userNav && previous !== stepName) this.publishLive(stepName);
+    },
+
+    showAppVersion() {
+        const el = document.getElementById('app-version');
+        if (el) el.textContent = 'v' + this.APP_VERSION;
+    },
+
+    dropStaleWorkers() {
+        if (typeof navigator === 'undefined' || !navigator.serviceWorker || !navigator.serviceWorker.getRegistrations) return;
+        navigator.serviceWorker.getRegistrations().then((regs) => {
+            (regs || []).forEach((reg) => {
+                if (reg && reg.unregister) reg.unregister();
+            });
+        }).catch(() => {});
+    },
+
+    emptyLive() {
+        if (typeof GolfSync !== 'undefined' && GolfSync.emptyState) {
+            return GolfSync.emptyState().live;
+        }
+        return { step: '', sessionId: '', sessionOrigin: '', updatedAt: 0 };
+    },
+
+    markEdit() {
+        if (this.sync && this.sync.noteEdit) this.sync.noteEdit();
+    },
+
+    // 지금 화면과 경기 세션을 다른 폰과 공유한다. 기록 둘러보기는 그 폰만의 화면이라 올리지 않는다.
+    publishLive(step) {
+        const name = step || this.currentStep || '';
+        if (!this.sync || !this.sync.hydrated || name === 'history') return;
+        this.live = {
+            step: name,
+            sessionId: this.gameSessionId || '',
+            sessionOrigin: this.gameSessionOrigin || '',
+            updatedAt: Date.now()
+        };
+        this.markEdit();
+        this.queueSync({ announce: false });
+    },
+
+    applySharedLive(live) {
+        if (!live) return;
+        const next = {
+            step: live.step || '',
+            sessionId: live.sessionId || '',
+            sessionOrigin: live.sessionOrigin || '',
+            updatedAt: Number(live.updatedAt) || 0
+        };
+        this.live = next;
+        if (next.sessionId) {
+            this.gameSessionId = next.sessionId;
+            this.gameSessionOrigin = next.sessionOrigin || '';
+            this.saveGameSession();
+            return;
+        }
+        if (next.updatedAt) {
+            this.gameSessionId = '';
+            this.gameSessionOrigin = '';
+            this.lsRemove('golf_bet_game_session');
+            this.lsRemove('golf_bet_game_session_origin');
+        }
     },
 
     touchRooms() {
@@ -1250,7 +1326,8 @@ const app = {
             players: this.players || [],
             rooms: this.rooms || [],
             history: this.history || [],
-            roomsUpdatedAt: this.roomsUpdatedAt || 0
+            roomsUpdatedAt: this.roomsUpdatedAt || 0,
+            live: this.live || this.emptyLive()
         };
     },
 
@@ -1270,17 +1347,22 @@ const app = {
     // 💾 우리의 정보를 인터넷 브라우저의 '비밀 창고(로컬 스토리지)'에 저장하는 기능들이에요.
     saveToStorage() {
         this.lsSet('golf_bet_players', JSON.stringify(this.players));
+        this.markEdit();
+        this.publishLive(this.currentStep);
         this.queueSync({ announce: true });
     },
 
     saveCurrentGameToStorage() {
         this.lsSet('golf_bet_current_rooms', JSON.stringify(this.rooms));
         this.lsSet('golf_bet_rooms_updated_at', String(this.roomsUpdatedAt || 0));
+        this.markEdit();
+        this.publishLive(this.currentStep);
         this.queueSync({ announce: true });
     },
 
     saveHistoryToStorage() {
         this.lsSet('golf_bet_history', JSON.stringify(this.history));
+        this.markEdit();
         this.queueSync({ announce: true });
     },
 
@@ -1296,12 +1378,14 @@ const app = {
         this.gameSessionId = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
         this.gameSessionOrigin = 'new';
         this.saveGameSession();
+        this.publishLive(this.currentStep || 'rooms');
     },
 
     continueGameSession() {
         this.gameSessionId = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
         this.gameSessionOrigin = 'continued';
         this.saveGameSession();
+        this.publishLive(this.currentStep || 'rooms');
     },
 
     clearGameSession() {
@@ -1309,6 +1393,7 @@ const app = {
         this.gameSessionOrigin = '';
         this.lsRemove('golf_bet_game_session');
         this.lsRemove('golf_bet_game_session_origin');
+        this.publishLive(this.currentStep || 'players');
     },
 
     ensureGameSessionId() {
@@ -1467,12 +1552,18 @@ const app = {
             },
             off() {},
             update: async (updates) => {
-                write(GolfSync.applyMultiPath(read() || {}, updates));
+                const resolved = (typeof GolfSync !== 'undefined' && GolfSync.resolveServerStamps)
+                    ? GolfSync.resolveServerStamps(updates, Date.now())
+                    : updates;
+                write(GolfSync.applyMultiPath(read() || {}, resolved));
                 if (channel) channel.postMessage({ t: Date.now() });
                 emit();
             },
             set: async (value) => {
-                write(value);
+                const resolved = (typeof GolfSync !== 'undefined' && GolfSync.resolveServerStamps)
+                    ? GolfSync.resolveServerStamps(value, Date.now())
+                    : value;
+                write(resolved);
                 if (channel) channel.postMessage({ t: Date.now() });
                 emit();
             }
@@ -1523,9 +1614,14 @@ const app = {
     startRestSync() {
         if (!this.server.dbUrl || this._mockMode) return;
         this._restMode = true;
+        if (this.server.dbRef && this._valueHandler && this.server.dbRef.off) {
+            this.server.dbRef.off('value', this._valueHandler);
+        }
+        this._valueHandler = null;
         this.loadFromServer();
         if (this._restInterval) clearInterval(this._restInterval);
-        this._restInterval = setInterval(() => this.loadFromServer(), 3000);
+        const wait = (typeof GolfSync !== 'undefined' && GolfSync.REST_POLL_MS) || 1500;
+        this._restInterval = setInterval(() => this.loadFromServer(), wait);
     },
 
     syncStatusText(kind) {
@@ -1556,14 +1652,78 @@ const app = {
     },
 
     showSaveStatus(kind) {
+        this.showToast(kind === 'error' ? '저장 실패' : '저장됨');
+    },
+
+    showToast(text) {
         const chip = document.getElementById('sync-status');
         const label = document.getElementById('server-status-text');
-        const failed = kind === 'error';
-        if (label) label.textContent = failed ? '저장 실패' : '저장됨';
+        const failed = text === '저장 실패' || text === '불러오지 못함';
+        if (label) label.textContent = text;
         if (chip) chip.className = `sync-status visible ${failed ? 'error' : 'saved'}`;
         clearTimeout(this._statusRevert);
         const wait = (typeof GolfSync !== 'undefined' && GolfSync.TOAST_MS) || 1500;
         this._statusRevert = setTimeout(() => this.hideSaveStatus(), wait);
+    },
+
+    // 서버에 있는 최신 값을 지금 화면에 그대로 가져온다. 로컬에만 있던 값은 따르지 않는다.
+    async refreshFromServer() {
+        if (this._refreshing) return;
+        this._refreshing = true;
+        const button = document.getElementById('refresh-server-btn');
+        if (button) button.disabled = true;
+        clearTimeout(this._syncTimer);
+        this._syncTimer = null;
+        this._needsSync = false;
+        try {
+            const data = await this.fetchServerSnapshot();
+            const stayStep = this.currentStep;
+            const stayMid = !!this._resultsMidGame;
+            if (this.sync && this.sync.replaceWithRemote) {
+                const result = this.sync.replaceWithRemote(data);
+                this.adoptSyncResult(result);
+            }
+            if (stayStep && this.currentStep !== stayStep) this.showStep(stayStep, { remote: true });
+            this._resultsMidGame = stayMid;
+            this.rerenderCurrentScreen();
+            this.showToast('최신 데이터 불러옴');
+        } catch (err) {
+            console.warn('refresh failed', err);
+            this.showToast('불러오지 못함');
+        } finally {
+            this._refreshing = false;
+            if (button) button.disabled = false;
+        }
+    },
+
+    async fetchServerSnapshot() {
+        if (this._mockMode) {
+            if (!this._mock || !this._mock.pull) return null;
+            return this._mock.pull();
+        }
+        if (!this.server.dbUrl) {
+            const error = new Error('no server');
+            error.offline = true;
+            throw error;
+        }
+        const signal = (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(8000) : undefined;
+        const response = await fetch(`${this.server.dbUrl}/golf_namu.json`, { cache: 'no-store', signal });
+        if (!response.ok) {
+            const error = new Error('refresh failed ' + response.status);
+            error.status = response.status;
+            throw error;
+        }
+        return response.json();
+    },
+
+    rerenderCurrentScreen() {
+        if (this.playerList) this.renderPlayerList();
+        if (this.currentStep === 'results') {
+            this.calculateRanking(false, !!this._resultsMidGame, { remote: true });
+            return;
+        }
+        if (this.currentStep === 'rooms' && this.rooms && this.rooms.length) this.renderRooms();
+        if (this.currentStep === 'history' && this.historyContainer) this.renderHistory();
     },
 
     setConnected(on) {
@@ -1587,13 +1747,17 @@ const app = {
         if (!result || result.deferred) return;
         this.persistSyncMeta();
         const before = this.currentState();
-        if (result.changed && result.state) {
-            this.players = result.state.players;
-            this.rooms = result.state.rooms;
-            this.history = result.state.history;
-            this.roomsUpdatedAt = result.state.roomsUpdatedAt || 0;
-            this.persistLocalOnly();
-            this.renderAfterRemote(before);
+        if (result.state) {
+            if (result.changed) {
+                this.players = result.state.players;
+                this.rooms = result.state.rooms;
+                this.history = result.state.history;
+                this.roomsUpdatedAt = result.state.roomsUpdatedAt || 0;
+                this.persistLocalOnly();
+            }
+            this.applySharedLive(result.state.live);
+            const liveMoved = !!(this.live && before.live && (this.live.step !== (before.live.step || '') || this.live.sessionId !== (before.live.sessionId || '')));
+            if (result.changed || liveMoved) this.renderAfterRemote(before);
         }
         const historyMigrated = this.migrateHistory();
         if (historyMigrated) this.renderAfterRemote(before);
@@ -1602,24 +1766,49 @@ const app = {
         }
     },
 
+    followSharedStep(step) {
+        this._applyingRemoteStep = true;
+        try {
+            if (step === 'results') {
+                this.calculateRanking(false, false);
+                return;
+            }
+            if (step === 'rooms' && this.rooms && this.rooms.length > 0) {
+                this.renderRooms();
+                this.showStep('rooms', { remote: true });
+                return;
+            }
+            if (step === 'players') this.showStep('players', { remote: true });
+        } finally {
+            this._applyingRemoteStep = false;
+        }
+    },
+
     renderAfterRemote(before) {
         const playersChanged = JSON.stringify(before.players || []) !== JSON.stringify(this.players || []);
         const roomsChanged = JSON.stringify(before.rooms || []) !== JSON.stringify(this.rooms || []);
         const historyChanged = JSON.stringify(before.history || []) !== JSON.stringify(this.history || []);
+        const keypad = document.getElementById('keypad-overlay');
+        const isKeypadOpen = !!(keypad && keypad.parentNode);
+        const isDragging = !!document.querySelector('.touch-drag-avatar') || !!document.querySelector('.room-player.dragging');
         if (playersChanged && this.playerNameInput && document.activeElement !== this.playerNameInput && document.activeElement !== this.playerHandyInput) {
             this.renderPlayerList();
         }
-        const roomScreen = this.currentStep === 'rooms';
-        const isKeypadOpen = !!document.getElementById('keypad-overlay');
-        const isDragging = !!document.querySelector('.touch-drag-avatar') || !!document.querySelector('.room-player.dragging');
-        if ((roomsChanged || playersChanged) && this.rooms && this.rooms.length > 0 && !isKeypadOpen && !isDragging) {
+        const sharedStep = this.live && this.live.step;
+        const canFollow = sharedStep && sharedStep !== 'history' && this.currentStep !== 'history' && !isKeypadOpen && !isDragging;
+        if (canFollow && this.currentStep !== sharedStep) {
+            this.followSharedStep(sharedStep);
+        } else if ((roomsChanged || playersChanged) && this.rooms && this.rooms.length > 0 && !isKeypadOpen && !isDragging) {
+            const roomScreen = this.currentStep === 'rooms';
             const typingName = document.activeElement === this.playerNameInput;
-            if (roomScreen || (roomsChanged && !typingName && this.currentStep !== 'results' && this.currentStep !== 'history')) {
+            if (this.currentStep === 'results' && (playersChanged || roomsChanged)) {
+                this.calculateRanking(false, !!this._resultsMidGame);
+            } else if (roomScreen || (roomsChanged && !typingName && this.currentStep !== 'history')) {
                 this.renderRooms();
-                if (!roomScreen) this.showStep('rooms');
+                if (!roomScreen) this.showStep('rooms', { remote: true });
             }
-        } else if (roomsChanged && (!this.rooms || this.rooms.length === 0) && roomScreen) {
-            this.showStep('players');
+        } else if (roomsChanged && (!this.rooms || this.rooms.length === 0) && this.currentStep === 'rooms') {
+            this.showStep('players', { remote: true });
         }
         if (historyChanged) this.renderHistory();
     },
@@ -1717,17 +1906,43 @@ const app = {
         }
     },
 
+    withTimeout(promise, ms) {
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                const error = new Error('write timeout');
+                error.timeout = true;
+                reject(error);
+            }, ms);
+            Promise.resolve(promise).then(
+                (value) => { clearTimeout(timer); resolve(value); },
+                (err) => { clearTimeout(timer); reject(err); }
+            );
+        });
+    },
+
     async writeUpdates(updates) {
-        if (this.server.dbRef && typeof this.server.dbRef.update === 'function') {
-            await this.server.dbRef.update(updates);
-            return;
+        const wire = (typeof GolfSync !== 'undefined' && GolfSync.stampForServer)
+            ? GolfSync.stampForServer(updates)
+            : updates;
+        const canSdk = !this._restMode && this.server.dbRef && typeof this.server.dbRef.update === 'function';
+        if (canSdk) {
+            const pending = Promise.resolve(this.server.dbRef.update(wire));
+            try {
+                await this.withTimeout(pending, 8000);
+                return;
+            } catch (err) {
+                pending.catch(() => {});
+                if (this.isPermissionError(err)) throw err;
+                console.warn('Firebase SDK write failed, using REST:', err);
+                this.startRestSync();
+            }
         }
         if (!this.server.dbUrl) {
             const error = new Error('no server');
             error.offline = true;
             throw error;
         }
-        const patches = GolfSync.groupRestPatches(updates);
+        const patches = GolfSync.groupRestPatches(wire);
         for (let i = 0; i < patches.length; i++) {
             const patch = patches[i];
             const url = patch.path
@@ -1735,10 +1950,12 @@ const app = {
                 : `${this.server.dbUrl}/golf_namu.json`;
             let response;
             try {
+                const signal = (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(8000) : undefined;
                 response = await fetch(url, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(patch.body)
+                    body: JSON.stringify(patch.body),
+                    signal
                 });
             } catch (err) {
                 err.offline = true;
@@ -1759,7 +1976,8 @@ const app = {
     async loadFromServer() {
         if (!this.server.dbUrl || this._mockMode) return;
         try {
-            const response = await fetch(`${this.server.dbUrl}/golf_namu.json`);
+            const signal = (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(8000) : undefined;
+            const response = await fetch(`${this.server.dbUrl}/golf_namu.json`, { signal });
             if (response.status === 401 || response.status === 403) {
                 return;
             }

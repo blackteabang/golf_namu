@@ -25,13 +25,31 @@
     var SCHEMA_VERSION = 2;
     var WRITE_DEBOUNCE_MS = 500;
     var TOAST_MS = 1500;
+    var REST_POLL_MS = 1500;
+
+    var SERVER_STAMP = { '.sv': 'timestamp' };
+
+    function emptyLive() {
+        return { step: '', sessionId: '', sessionOrigin: '', updatedAt: 0 };
+    }
+
+    function normalizeLive(live) {
+        var src = live || {};
+        return {
+            step: src.step || '',
+            sessionId: src.sessionId || '',
+            sessionOrigin: src.sessionOrigin || '',
+            updatedAt: Number(src.updatedAt) || 0
+        };
+    }
 
     function emptyState() {
         return {
             players: [],
             rooms: [],
             history: [],
-            roomsUpdatedAt: 0
+            roomsUpdatedAt: 0,
+            live: emptyLive()
         };
     }
 
@@ -47,7 +65,8 @@
                 return (room || []).map(function (id) { return id; });
             }),
             history: (src.history || []).map(cloneHistoryRecord),
-            roomsUpdatedAt: src.roomsUpdatedAt || 0
+            roomsUpdatedAt: src.roomsUpdatedAt || 0,
+            live: normalizeLive(src.live)
         };
     }
 
@@ -281,6 +300,33 @@
         return JSON.stringify(serverHistory(a)) === JSON.stringify(serverHistory(b));
     }
 
+    function historyBody(record) {
+        var copy = serverHistory(record);
+        delete copy.savedAt;
+        delete copy.id;
+        return JSON.stringify(copy);
+    }
+
+    function sameLive(a, b) {
+        var left = normalizeLive(a);
+        var right = normalizeLive(b);
+        return left.step === right.step && left.sessionId === right.sessionId && left.sessionOrigin === right.sessionOrigin && left.updatedAt === right.updatedAt;
+    }
+
+    function profileFieldsDiffer(player, other) {
+        if (!player || !other) return true;
+        return (player.name || '') !== (other.name || '')
+            || handyOf(player.handy) !== handyOf(other.handy)
+            || (player.isActive !== false) !== (other.isActive !== false);
+    }
+
+    function scoreFieldsDiffer(player, other) {
+        var leftHas = hasScore(player);
+        var rightHas = hasScore(other);
+        if (leftHas !== rightHas) return true;
+        return leftHas && Number(player.score) !== Number(other.score);
+    }
+
     function stateFromSnapshot(raw) {
         var format = detectFormat(raw);
         if (format === 'empty') return { format: format, state: emptyState() };
@@ -296,7 +342,8 @@
                     history: objectToArray(raw.history).filter(function (record) {
                         return record && typeof record === 'object';
                     }).map(cloneHistoryRecord),
-                    roomsUpdatedAt: raw.rooms == null ? 0 : (Number(raw.updatedAt) || 0)
+                    roomsUpdatedAt: raw.rooms == null ? 0 : (Number(raw.updatedAt) || 0),
+                    live: normalizeLive(raw.live)
                 }
             };
         }
@@ -358,7 +405,8 @@
                 players: players,
                 rooms: decodeRooms(raw.rooms),
                 history: history,
-                roomsUpdatedAt: Number(raw.roomsUpdatedAt) || 0
+                roomsUpdatedAt: Number(raw.roomsUpdatedAt) || 0,
+                live: normalizeLive(raw.live)
             }
         };
     }
@@ -402,11 +450,17 @@
         return out;
     }
 
-    function pickProfile(localPlayer, remotePlayer) {
+    function pickProfile(localPlayer, remotePlayer, ackedPlayer) {
         if (!localPlayer) return remotePlayer;
         if (!remotePlayer) return localPlayer;
+        var localPending = !!(ackedPlayer && profileFieldsDiffer(localPlayer, ackedPlayer));
+        var remotePending = !!(ackedPlayer && profileFieldsDiffer(remotePlayer, ackedPlayer));
+        if (!profileFieldsDiffer(localPlayer, remotePlayer)) return remotePlayer;
+        if (localPending && !remotePending) return localPlayer;
+        if (remotePending && !localPending) return remotePlayer;
         var localTime = Number(localPlayer.updatedAt) || 0;
         var remoteTime = Number(remotePlayer.updatedAt) || 0;
+        // updatedAt 0 은 '시각 없음'이다. 같거나 0이면 서버 값을 받아 폰들이 한곳으로 모인다.
         if (localTime > remoteTime) return localPlayer;
         return remotePlayer;
     }
@@ -423,24 +477,21 @@
             remote.score = null;
             remote.scoreUpdatedAt = 0;
         }
-        var remoteHas = remote && hasScore(remote);
-        var localTime = localPlayer ? (Number(localPlayer.scoreUpdatedAt) || 0) : 0;
-        var remoteTime = remoteHas ? (Number(remote.scoreUpdatedAt) || 0) : 0;
-        var ackedTime = ackedPlayer ? (Number(ackedPlayer.scoreUpdatedAt) || 0) : 0;
+        var localPending = !!(ackedPlayer && scoreFieldsDiffer(localPlayer, ackedPlayer));
+        var remotePending = !!(ackedPlayer && scoreFieldsDiffer(remote, ackedPlayer));
+        var sameValue = !scoreFieldsDiffer(localPlayer, remote);
 
-        if (remoteHas) {
-            if (localPlayer && localTime > remoteTime) return scoreTuple(localPlayer);
+        if (sameValue && remote) return scoreTuple(remote);
+        if (localPending && !remotePending) return scoreTuple(localPlayer);
+        if (remotePending && !localPending) return scoreTuple(remote);
+        if (localPending && remotePending) {
+            var localTime = localPlayer ? (Number(localPlayer.scoreUpdatedAt) || 0) : 0;
+            var remoteTime = remote ? (Number(remote.scoreUpdatedAt) || 0) : 0;
+            if (localTime > remoteTime) return scoreTuple(localPlayer);
             return scoreTuple(remote);
         }
-
-        if (localPlayer && localTime > remoteTime && localTime > ackedTime && (hasScore(localPlayer) || localTime > 0)) {
-            if (hasScore(localPlayer) || (ackedPlayer && hasScore(ackedPlayer) && localTime > ackedTime)) {
-                return scoreTuple(localPlayer);
-            }
-        }
-        if (!remotePlayer && localPlayer && (!ackedPlayer || localTime > ackedTime)) {
-            return scoreTuple(localPlayer);
-        }
+        if (remote) return scoreTuple(remote);
+        if (localPlayer && (!ackedPlayer || scoreFieldsDiffer(localPlayer, ackedPlayer))) return scoreTuple(localPlayer);
         return { score: null, scoreUpdatedAt: 0 };
     }
 
@@ -467,7 +518,7 @@
         var scoreTomb = tombs && tombs.scores ? (tombs.scores[String(localId(localPlayer, remotePlayer, ackedPlayer))] || 0) : 0;
         var presence = playerKept(localPlayer, remotePlayer, ackedPlayer, playerTomb);
         if (!presence.keep) return null;
-        var profile = pickProfile(localPlayer, presence.remote);
+        var profile = pickProfile(localPlayer, presence.remote, ackedPlayer);
         if (!profile) return null;
         var score = pickScore(localPlayer, presence.remote || (playerTomb ? null : remotePlayer), ackedPlayer, scoreTomb);
         return clonePlayer({
@@ -517,7 +568,21 @@
             var tombAt = historyTomb(tombs, key);
             if (remoteRecord && tombAt && recordTime(remoteRecord) <= tombAt) remoteRecord = null;
             if (localRecord && remoteRecord) {
-                merged.push(cloneHistoryRecord(recordTime(localRecord) > recordTime(remoteRecord) ? localRecord : remoteRecord));
+                if (historyBody(localRecord) === historyBody(remoteRecord)) {
+                    merged.push(cloneHistoryRecord(remoteRecord));
+                    return;
+                }
+                var localPendingHist = !ackedRecord || historyBody(localRecord) !== historyBody(ackedRecord);
+                var remotePendingHist = !ackedRecord || historyBody(remoteRecord) !== historyBody(ackedRecord);
+                if (localPendingHist && !remotePendingHist) {
+                    merged.push(cloneHistoryRecord(localRecord));
+                    return;
+                }
+                if (localPendingHist && remotePendingHist && recordTime(localRecord) > recordTime(remoteRecord)) {
+                    merged.push(cloneHistoryRecord(localRecord));
+                    return;
+                }
+                merged.push(cloneHistoryRecord(remoteRecord));
                 return;
             }
             if (localRecord && !remoteRecord) {
@@ -531,25 +596,53 @@
         return orderedHistory(local.history, merged);
     }
 
-    function mergeRooms(local, remote) {
+    function mergeRooms(local, remote, acked) {
         var localTime = Number(local.roomsUpdatedAt) || 0;
         var remoteTime = Number(remote.roomsUpdatedAt) || 0;
+        // 방 구성이 같으면 서버 시각을 받아 빠른 폰 시계가 계속 앞서지 않게 한다.
+        if (sameRooms(local.rooms, remote.rooms)) {
+            return { rooms: decodeRooms(remote.rooms), roomsUpdatedAt: remoteTime };
+        }
+        var base = acked || emptyState();
+        var localPending = !sameRooms(local.rooms, base.rooms);
+        var remotePending = !sameRooms(remote.rooms, base.rooms);
+        if (localPending && !remotePending) {
+            return { rooms: decodeRooms(local.rooms), roomsUpdatedAt: localTime };
+        }
+        if (remotePending && !localPending) {
+            return { rooms: decodeRooms(remote.rooms), roomsUpdatedAt: remoteTime };
+        }
         if (localTime > remoteTime) {
             return { rooms: decodeRooms(local.rooms), roomsUpdatedAt: localTime };
         }
         return { rooms: decodeRooms(remote.rooms), roomsUpdatedAt: remoteTime };
     }
 
+    function mergeLive(local, remote, acked) {
+        var left = normalizeLive(local && local.live);
+        var right = normalizeLive(remote && remote.live);
+        var base = normalizeLive(acked && acked.live);
+        var sameScreen = left.step === right.step && left.sessionId === right.sessionId && left.sessionOrigin === right.sessionOrigin;
+        if (sameScreen) return right;
+        var localPending = left.step !== base.step || left.sessionId !== base.sessionId || left.sessionOrigin !== base.sessionOrigin;
+        var remotePending = right.step !== base.step || right.sessionId !== base.sessionId || right.sessionOrigin !== base.sessionOrigin;
+        if (localPending && !remotePending) return left;
+        if (remotePending && !localPending) return right;
+        if (left.updatedAt > right.updatedAt) return left;
+        return right;
+    }
+
     function mergeRemote(local, remote, acked, tombs) {
         var baseLocal = local || emptyState();
         var baseRemote = remote || emptyState();
         var baseAcked = acked || emptyState();
-        var rooms = mergeRooms(baseLocal, baseRemote);
+        var rooms = mergeRooms(baseLocal, baseRemote, baseAcked);
         return {
             players: mergePlayers(baseLocal, baseRemote, baseAcked, tombs),
             rooms: rooms.rooms,
             history: mergeHistory(baseLocal, baseRemote, baseAcked, tombs),
-            roomsUpdatedAt: rooms.roomsUpdatedAt
+            roomsUpdatedAt: rooms.roomsUpdatedAt,
+            live: mergeLive(baseLocal, baseRemote, baseAcked)
         };
     }
 
@@ -625,7 +718,8 @@
             players: players,
             rooms: decodeRooms(roomsSource.rooms),
             history: history,
-            roomsUpdatedAt: roomsTime
+            roomsUpdatedAt: roomsTime,
+            live: normalizeLive((local && local.live) || (lastGood && lastGood.live))
         };
     }
 
@@ -678,6 +772,11 @@
             any = true;
         }
 
+        if (!sameLive(local.live, acked.live)) {
+            updates.live = normalizeLive(local.live);
+            any = true;
+        }
+
         if (!any) return null;
         updates.schemaVersion = SCHEMA_VERSION;
         return updates;
@@ -710,7 +809,7 @@
             history[historyKey(record)] = serverHistory(record);
             anyHistory = true;
         });
-        return {
+        var updates = {
             schemaVersion: SCHEMA_VERSION,
             players: anyPlayer ? players : null,
             scores: anyScore ? scores : null,
@@ -718,6 +817,9 @@
             rooms: encodeRooms(state.rooms),
             roomsUpdatedAt: Number(state.roomsUpdatedAt) || 0
         };
+        var live = normalizeLive(state && state.live);
+        if (live.step || live.sessionId || live.updatedAt) updates.live = live;
+        return updates;
     }
 
     function applyMultiPath(root, updates) {
@@ -759,7 +861,70 @@
         if (updates.scores) raw.scores = updates.scores;
         if (updates.history) raw.history = updates.history;
         if (updates.rooms) raw.rooms = updates.rooms;
+        var live = normalizeLive(state && state.live);
+        if (live.step || live.sessionId || live.updatedAt) raw.live = live;
         return raw;
+    }
+
+    function isServerStamp(value) {
+        return !!value && typeof value === 'object' && value['.sv'] === 'timestamp';
+    }
+
+    function stampClock(node, field) {
+        if (!node || typeof node !== 'object' || Array.isArray(node)) return;
+        if (typeof node[field] === 'number') node[field] = clone(SERVER_STAMP);
+    }
+
+    function stampCollection(map, field) {
+        if (!map || typeof map !== 'object' || Array.isArray(map)) return;
+        Object.keys(map).forEach(function (id) {
+            stampClock(map[id], field);
+        });
+    }
+
+    function stampForServer(updates) {
+        var copy = clone(updates);
+        if (!copy) return copy;
+        Object.keys(copy).forEach(function (path) {
+            var value = copy[path];
+            if (path === 'roomsUpdatedAt' && typeof value === 'number') {
+                copy[path] = clone(SERVER_STAMP);
+                return;
+            }
+            if (path === 'players') {
+                stampCollection(value, 'updatedAt');
+                return;
+            }
+            if (path === 'scores') {
+                stampCollection(value, 'updatedAt');
+                return;
+            }
+            if (path === 'history') {
+                stampCollection(value, 'savedAt');
+                return;
+            }
+            if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+            if (path.indexOf('players/') === 0 || path.indexOf('scores/') === 0 || path === 'live') {
+                stampClock(value, 'updatedAt');
+            }
+            if (path.indexOf('history/') === 0) stampClock(value, 'savedAt');
+        });
+        return copy;
+    }
+
+    function resolveServerStamps(value, now) {
+        var clock = now || Date.now();
+        function walk(node) {
+            if (isServerStamp(node)) return clock;
+            if (!node || typeof node !== 'object') return node;
+            if (Array.isArray(node)) return node.map(walk);
+            var copy = {};
+            Object.keys(node).forEach(function (key) {
+                copy[key] = walk(node[key]);
+            });
+            return copy;
+        }
+        return walk(clone(value));
     }
 
     function applyWrittenUpdates(acked, updates) {
@@ -841,6 +1006,37 @@
             pendingRemote: undefined,
             hasPending: false,
             connected: false,
+            hasSessionEdits: false,
+            baseline: null,
+
+            noteEdit: function () {
+                client.hasSessionEdits = true;
+            },
+
+            // 새로고침은 합치지 않고 서버 스냅샷을 그대로 현재 상태로 삼는다.
+            replaceWithRemote: function (raw) {
+                var parsed = stateFromSnapshot(raw);
+                var remote = parsed.state || emptyState();
+                client.acked = cloneState(remote);
+                client.lastGood = cloneState(remote);
+                client.hydrated = true;
+                client.migrationNeeded = false;
+                client.pendingRemote = undefined;
+                client.hasPending = false;
+                return {
+                    deferred: false,
+                    state: cloneState(remote),
+                    changed: true,
+                    dirty: false,
+                    migrationNeeded: false,
+                    format: parsed.format
+                };
+            },
+
+            // 앱을 연 직후의 로컬 상태. 그 뒤 사용자가 고친 칸만 첫 스냅샷과 겨룬다.
+            noteBaseline: function (state) {
+                client.baseline = cloneState(state || emptyState());
+            },
 
             tombstonePlayer: function (id, time) {
                 var key = String(id);
@@ -945,8 +1141,32 @@
             };
         }
 
+        // 첫 스냅샷은 서버가 기준이다. 로컬 저장소의 옛 시각으로 서버를 덮어쓰지 않는다.
+        // 그 전에 이 화면에서 고친 값만 예외로 합친다.
+        if (format === 'new' && !client.hydrated && !client.hasSessionEdits) {
+            var firstRemote = stateFromSnapshot(raw).state;
+            var live = firstRemote.live || {};
+            if (stateHasData(firstRemote) || live.step || live.sessionId) {
+                client.acked = cloneState(firstRemote);
+                client.lastGood = cloneState(firstRemote);
+                client.hydrated = true;
+                client.migrationNeeded = false;
+                return {
+                    deferred: false,
+                    state: cloneState(firstRemote),
+                    changed: !statesEqual(localState || emptyState(), firstRemote),
+                    dirty: false,
+                    migrationNeeded: false,
+                    format: 'new'
+                };
+            }
+        }
+
         var remote = stateFromSnapshot(raw).state;
-        var merged = mergeRemote(localState || emptyState(), remote, client.acked, client.tombstones);
+        // 아직 서버를 받기 전이면, 빈 acked가 아니라 '열었을 때의 화면'과 비교한다.
+        // 그래야 로컬 저장소의 옛 시각이 손대지 않은 점수를 서버보다 새것으로 착각하지 않는다.
+        var prior = (!client.hydrated && client.baseline) ? client.baseline : client.acked;
+        var merged = mergeRemote(localState || emptyState(), remote, prior, client.tombstones);
         client.acked = cloneState(remote);
         client.lastGood = cloneState(merged);
         client.hydrated = true;
@@ -966,6 +1186,7 @@
         SCHEMA_VERSION: SCHEMA_VERSION,
         WRITE_DEBOUNCE_MS: WRITE_DEBOUNCE_MS,
         TOAST_MS: TOAST_MS,
+        REST_POLL_MS: REST_POLL_MS,
         emptyState: emptyState,
         cloneState: cloneState,
         detectFormat: detectFormat,
@@ -984,6 +1205,9 @@
         statusText: statusText,
         decideFlush: decideFlush,
         groupRestPatches: groupRestPatches,
+        stampForServer: stampForServer,
+        resolveServerStamps: resolveServerStamps,
+        SERVER_STAMP: SERVER_STAMP,
         createSyncClient: createSyncClient,
         hasScore: hasScore,
         recordTime: recordTime
