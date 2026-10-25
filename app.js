@@ -842,15 +842,14 @@ const app = {
         const missingScores = activePlayers.some(p => !this.hasScore(p));
         if (askConfirm && missingScores && !isMidGame && !confirm('입력되지 않은 스코어가 있습니다. 그대로 진행할까요?')) return;
 
-        let playersToRank = [...activePlayers];
-
-        // Sort active players by Score (오늘 오버파 - 핸디캡, 낮을수록 승리)
-        const rankedPlayers = playersToRank.sort((a, b) => GolfScore.compareRank(a, b, isMidGame));
+        // 스코어가 낮을수록 앞선다. 같으면 핸디가 더 낮은 쪽이 앞선다.
+        // 스코어와 핸디가 모두 같으면 같은 순위이고, 다음 순위는 건너뛴다.
+        const ranking = GolfScore.rankPlayers(activePlayers, isMidGame);
 
         if (askConfirm && !isMidGame) {
-            this.saveToHistory(rankedPlayers);
+            this.saveToHistory(ranking.players);
         }
-        this.renderResults(rankedPlayers, isMidGame);
+        this.renderResults(ranking.players, ranking.ranks, isMidGame);
         this.showStep('results');
     },
 
@@ -1165,14 +1164,22 @@ const app = {
             
             div.onclick = () => div.classList.toggle('expanded');
             
-            const winner = record.players[0];
-            const others = record.players.slice(1).map((p, i) => `
-                <div class="history-player-row">
-                    <span class="rank">${i + 2}위</span>
-                    <span class="name">${p.name}</span>
-                    <span class="stats">오버파: ${p.score} | H: ${p.handy} | <span class="net">스코어: ${this.formatNet(p.net)}</span></span>
-                </div>
-            `).join('');
+            const ranking = GolfScore.rankPlayers(record.players, false);
+            const rows = ranking.players.map((p, i) => {
+                const rank = ranking.ranks[i];
+                const place = rank <= 3 ? ` place-${rank}` : '';
+                const score = this.formatNet(this.getNetScore(p.score, p.handy));
+                return `
+                <div class="history-player-row${rank === 1 ? ' winner' : ''}">
+                    <span class="rank${place}">${rank}위</span>
+                    <span class="name">${this.escapeHtml(p.name)}</span>
+                    <span class="stats">오버파: ${p.score} | H: ${p.handy} | <span class="net">스코어: ${score}</span></span>
+                </div>`;
+            }).join('');
+            const winners = ranking.players.filter((_, i) => ranking.ranks[i] === 1);
+            const winnerLabel = winners.length > 1 ? '공동 우승' : '우승';
+            const winnerNames = winners.map((p) => this.escapeHtml(p.name)).join(', ');
+            const winnerScore = winners.length ? this.formatNet(this.getNetScore(winners[0].score, winners[0].handy)) : '';
 
             div.innerHTML = `
                 <div class="history-date-header">
@@ -1180,23 +1187,18 @@ const app = {
                     <span class="history-round">${record.round}경기</span>
                 </div>
                 <div class="history-winner-preview">
-                    🏆 우승: <span>${winner.name}</span> (${this.formatNet(winner.net)}점)
+                    🏆 ${winnerLabel}: <span>${winnerNames}</span> (${winnerScore}점)
                     <span class="toggle-icon">▼</span>
                 </div>
                 <div class="history-players-list">
-                    <div class="history-player-row winner">
-                        <span class="rank">1위</span>
-                        <span class="name">${winner.name}</span>
-                        <span class="stats">오버파: ${winner.score} | H: ${winner.handy} | <span class="net">스코어: ${this.formatNet(winner.net)}</span></span>
-                    </div>
-                    ${others}
+                    ${rows}
                 </div>
             `;
             this.historyContainer.appendChild(div);
         });
     },
 
-    renderResults(rankedPlayers, isMidGame = false) {
+    renderResults(rankedPlayers, ranks, isMidGame = false) {
         const titleEl = document.getElementById('results-title');
         if (titleEl) {
             titleEl.textContent = isMidGame ? '중간 랭킹' : '최종 랭킹';
@@ -1211,14 +1213,16 @@ const app = {
         rankedPlayers.forEach((player, index) => {
             const isScoreEmpty = !this.hasScore(player);
             const finalScore = this.getNetScore(player.score, player.handy);
+            const rank = ranks ? ranks[index] : index + 1;
             
             const scoreDisplay = isScoreEmpty ? '-' : player.score;
             const finalScoreDisplay = (isMidGame && isScoreEmpty) ? '-' : this.formatNet(finalScore);
 
             const tr = document.createElement('tr');
+            if (rank <= 3) tr.className = `rank-${rank}`;
             tr.innerHTML = `
-                <td>${index + 1}</td>
-                <td>${player.name}</td>
+                <td>${rank}</td>
+                <td>${this.escapeHtml(player.name)}</td>
                 <td>${scoreDisplay}</td>
                 <td>${player.handy}</td>
                 <td style="font-weight: 700; color: var(--primary-light)">${finalScoreDisplay}</td>

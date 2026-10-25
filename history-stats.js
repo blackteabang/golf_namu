@@ -9,8 +9,8 @@
 // 입력 기록은 바꾸지 않는다.
 //
 // 지표 (한 경기에서 이름이 같으면 한 명으로 보고, 더 좋은 스코어만 남긴다)
-//   승     : 그 경기의 우승 1명. 스코어가 가장 낮고, 같으면 핸디가 더 낮은 사람.
-//            스코어와 핸디까지 같으면 기록에 먼저 나온 한 명만 우승이다.
+//   승     : 스코어가 가장 낮고, 같으면 핸디가 더 낮은 사람. 핸디는 부호 있는 숫자(-1 < 4 < 9).
+//            스코어와 핸디가 모두 같으면 공동 우승이고, 그 사람들은 각자 1승이다.
 //   경기   : 참가한 경기 수
 //   평균·합계 : 스코어(net)의 평균과 합. 평균이 낮을수록 좋다.
 //   이달의 MVP : 선택 월(Asia/Seoul) 최다 승 → 평균 스코어가 더 낮은 쪽 →
@@ -142,12 +142,26 @@
         return order;
     }
 
-    function winnerName(entries) {
-        var best = -1;
-        entries.forEach(function (entry, index) {
-            if (best === -1 || rankCompare(entry.player, entries[best].player) < 0) best = index;
+    function handicapOf(player) {
+        if (typeof GolfScore !== 'undefined' && GolfScore.parseHandicap) return GolfScore.parseHandicap(player && player.handy);
+        var handy = Number(player && player.handy);
+        return Number.isFinite(handy) ? handy : 0;
+    }
+
+    // 스코어와 핸디가 모두 같은 선수는 모두 우승이다.
+    function winnerNames(entries) {
+        var best = null;
+        entries.forEach(function (entry) {
+            if (!best || rankCompare(entry.player, best.player) < 0) best = entry;
         });
-        return best >= 0 ? entries[best].name : '';
+        if (!best) return [];
+        var bestNet = netPoints(best.player);
+        var bestHandy = handicapOf(best.player);
+        return entries.filter(function (entry) {
+            return netPoints(entry.player) === bestNet && handicapOf(entry.player) === bestHandy;
+        }).map(function (entry) {
+            return entry.name;
+        });
     }
 
     function accumulate(records) {
@@ -158,7 +172,7 @@
             var entries = entriesForGame(record.players);
             if (!entries.length) return;
             games += 1;
-            var winner = winnerName(entries);
+            var winners = winnerNames(entries);
             entries.forEach(function (entry) {
                 var points = netPoints(entry.player);
                 var row = map.get(entry.name);
@@ -168,7 +182,7 @@
                 }
                 row.games += 1;
                 row.totalPoints += points;
-                if (entry.name === winner) row.wins += 1;
+                if (winners.indexOf(entry.name) !== -1) row.wins += 1;
             });
         });
         var players = Array.from(map.values()).map(function (row) {

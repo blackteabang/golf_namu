@@ -31,7 +31,9 @@
         return `${net}`;
     }
 
-    // 낮은 스코어가 승리. 동점이면 핸디캡이 더 낮은(기대 타수가 적은) 쪽이 앞선다.
+    // 낮은 스코어가 앞선다. 스코어가 같으면 핸디캡이 더 낮은 쪽이 앞선다.
+    // 핸디캡은 부호 있는 숫자다. 예: -1 < 4 < 9.
+    // 스코어와 핸디캡이 모두 같으면 0이고, 안정 정렬이라 입력 순서가 유지된다.
     function compareRank(a, b, isMidGame) {
         if (isMidGame) {
             const aHasScore = hasScore(a);
@@ -47,12 +49,37 @@
         return parseHandicap(a.handy) - parseHandicap(b.handy);
     }
 
+    // 공동 순위는 스코어와 핸디캡이 모두 같을 때만. 중간 순위의 미입력은 동점이 아니다.
+    function samePlace(a, b, isMidGame) {
+        if (isMidGame && (!hasScore(a) || !hasScore(b))) return false;
+        return getNetScore(a.score, a.handy) === getNetScore(b.score, b.handy)
+            && parseHandicap(a.handy) === parseHandicap(b.handy);
+    }
+
+    // compareRank로 정렬된 목록의 대회 순위. 공동이면 같은 번호, 다음 순위는 건너뛴다.
+    function competitionRanks(players, isMidGame) {
+        const ranks = [];
+        for (let i = 0; i < players.length; i++) {
+            if (i > 0 && samePlace(players[i], players[i - 1], isMidGame)) ranks.push(ranks[i - 1]);
+            else ranks.push(i + 1);
+        }
+        return ranks;
+    }
+
+    function rankPlayers(players, isMidGame) {
+        const ordered = (players || []).slice().sort((a, b) => compareRank(a, b, !!isMidGame));
+        return { players: ordered, ranks: competitionRanks(ordered, !!isMidGame) };
+    }
+
     global.GolfScore = {
         hasScore,
         getOverPar,
         parseHandicap,
         getNetScore,
         formatNet,
-        compareRank
+        compareRank,
+        samePlace,
+        competitionRanks,
+        rankPlayers
     };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
