@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <title>싱글벙글 - 즐거운골프생활</title>
     <meta name="description" content="골프 모임 회원들을 위한 간편하고 고급스러운 내기 계산기">
-    <link rel="stylesheet" href="style.css?v=20261026a">
+    <link rel="stylesheet" href="style.css?v=20261113a">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
@@ -39,17 +39,15 @@
                     <h2>참여자 등록</h2>
                     <span class="counter">참여 <span id="player-count">0</span>명</span>
                 </div>
-                <div class="input-group">
-                    <input type="text" id="player-name" placeholder="닉네임 (예: 홍길동)" maxlength="10">
-                    <input type="text" id="player-handy" class="handy-input" placeholder="핸디 입력 (터치)" readonly onclick="app.openHandyKeypad(this)">
-                    <div class="add-player-row">
-                        <button id="add-player-btn" class="btn-primary btn-add-player">참여자추가</button>
-                    </div>
+                <button type="button" id="open-add-player-btn" class="btn-outline btn-new-player">+ 신규 참여자</button>
+                <div class="player-search">
+                    <input type="search" id="player-search" placeholder="이름으로 검색" aria-label="이름으로 검색" autocomplete="off" enterkeyhint="search">
                 </div>
                 <div class="player-list-container">
                     <ul id="player-list">
                         <!-- Players will be added here -->
                     </ul>
+                    <p id="player-search-empty" class="player-search-empty" hidden>검색 결과가 없습니다.</p>
                 </div>
                 <div class="action-footer">
                     <button id="assign-rooms-btn" class="btn-large" disabled>랜덤 조 배정 시작</button>
@@ -148,6 +146,24 @@
             </div>
         </main>
 
+        <div id="add-player-modal" class="player-modal" hidden>
+            <div class="player-modal-card" role="dialog" aria-modal="true" aria-labelledby="add-player-title">
+                <h3 id="add-player-title">신규 참여자</h3>
+                <label class="player-modal-field">
+                    <span>이름</span>
+                    <input type="text" id="player-name" placeholder="닉네임 (예: 홍길동)" maxlength="10" autocomplete="name">
+                </label>
+                <label class="player-modal-field">
+                    <span>핸디</span>
+                    <input type="text" id="player-handy" class="handy-input" placeholder="핸디 입력 (터치)" readonly onclick="app.openHandyKeypad(this)">
+                </label>
+                <div class="player-modal-actions">
+                    <button type="button" id="cancel-add-player-btn" class="btn-outline">취소</button>
+                    <button type="button" id="add-player-btn" class="btn-primary btn-add-player">등록</button>
+                </div>
+            </div>
+        </div>
+
         <footer>
             <p>&copy; 2026 수원~나무가 만들었지롱~ <span id="app-version">v…</span></p>
         </footer>
@@ -155,11 +171,11 @@
 
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="firebase-config.js?v=20261026a"></script>
-    <script src="score.js?v=20261026a"></script>
-    <script src="history-match.js?v=20261026a"></script>
-    <script src="history-stats.js?v=20261026a"></script>
-    <script src="sync-model.js?v=20261026a"></script>
-    <script src="app.js?v=20261026a"></script>
+    <script src="firebase-config.js?v=20261113a"></script>
+    <script src="score.js?v=20261113a"></script>
+    <script src="history-match.js?v=20261113a"></script>
+    <script src="history-stats.js?v=20261113a"></script>
+    <script src="sync-model.js?v=20261113a"></script>
+    <script src="app.js?v=20261113a"></script>
 </body>
 </html>

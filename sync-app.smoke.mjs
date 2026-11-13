@@ -197,4 +197,26 @@ await new Promise((resolve) => setTimeout(resolve, 40));
 assert.equal(clientB.players.some((player) => player.name === '지연'), false);
 assert.equal(JSON.parse(localStorage.getItem('golf_mock_db_v1')).players[String(bJiyun.id)], undefined);
 
+assert.equal(clientA.playerNameMatches('홍 길동', '홍길'), true);
+assert.equal(clientA.playerNameMatches('홍길동', '나무'), false);
+assert.equal(clientA.playerNameMatches('나무골프', ' 나 무 '), true);
+assert.equal(clientA.playerNameMatches('Golf', 'golf'), true);
+assert.equal(clientA.playerNameMatches('민수', ''), true);
+
+const beforeDuplicate = clientA.players.length;
+clientA.playerNameInput.value = '민 수';
+clientA.playerHandyInput.value = '1';
+clientA.addPlayer();
+assert.equal(clientA.players.length, beforeDuplicate, '공백을 뺀 같은 이름은 다시 등록하지 않는다');
+
+clientA.playerQuery = '민';
+clientA.renderPlayerList();
+assert.equal(clientA.players.length, beforeDuplicate, '검색은 참여자를 지우지 않는다');
+assert.equal(clientA.players.filter((player) => clientA.playerNameMatches(player.name, clientA.playerQuery)).length, 1);
+const minsuId = clientA.players.find((player) => player.name === '민수').id;
+clientA.setParticipation(minsuId, false);
+assert.equal(clientA.players.find((player) => player.id === minsuId).isActive, false, '검색 중에도 참여 변경이 된다');
+clientA.setParticipation(minsuId, true);
+clientA.playerQuery = '';
+
 console.log('two-client app smoke passed');
