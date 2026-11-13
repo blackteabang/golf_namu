@@ -214,9 +214,20 @@ clientA.renderPlayerList();
 assert.equal(clientA.players.length, beforeDuplicate, '검색은 참여자를 지우지 않는다');
 assert.equal(clientA.players.filter((player) => clientA.playerNameMatches(player.name, clientA.playerQuery)).length, 1);
 const minsuId = clientA.players.find((player) => player.name === '민수').id;
+let fullRenders = 0;
+const originalRender = clientA.renderPlayerList.bind(clientA);
+clientA.renderPlayerList = (...args) => {
+    fullRenders += 1;
+    return originalRender(...args);
+};
+const queryBefore = clientA.playerQuery;
 clientA.setParticipation(minsuId, false);
+assert.equal(fullRenders, 0, '참여 변경은 목록 전체를 다시 그리지 않는다');
+assert.equal(clientA.playerQuery, queryBefore, '참여 변경이 검색어를 지우지 않는다');
 assert.equal(clientA.players.find((player) => player.id === minsuId).isActive, false, '검색 중에도 참여 변경이 된다');
 clientA.setParticipation(minsuId, true);
+assert.equal(fullRenders, 0, '다시 참여로 바꿔도 목록 전체를 그리지 않는다');
+clientA.renderPlayerList = originalRender;
 clientA.playerQuery = '';
 
 console.log('two-client app smoke passed');

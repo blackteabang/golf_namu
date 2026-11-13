@@ -1,6 +1,6 @@
 const app = {
     // 푸터에 보이는 버전. 캐시된 예전 스크립트면 이 숫자가 안 바뀐다.
-    APP_VERSION: '20261113b',
+    APP_VERSION: '20261113c',
     playerQuery: '',
     // 👥 선수들의 정보(이름, 핸디캡 등)를 담아둘 빈 바구니(배열)예요.
     players: [],
@@ -309,14 +309,16 @@ const app = {
     },
 
     // 🔘 특정 선수를 오늘 경기에 참여시킬지(참여/비참여) 설정하는 기능이에요.
+    // 목록 전체를 다시 그리지 않고, 그 행과 참여 인원만 바로 바꾼 뒤 기존 저장 경로로 올립니다.
     setParticipation(id, isActive) {
         const player = this.players.find(p => p.id === id);
-        if (player) {
-            player.isActive = isActive;
-            player.updatedAt = Date.now();
-            this.saveToStorage();
-            this.renderPlayerList();
-        }
+        if (!player || player.isActive === isActive) return;
+        player.isActive = isActive;
+        player.updatedAt = Date.now();
+        this.saveToStorage();
+        this.patchPlayerRow(player);
+        this.renumberPlayerRows();
+        this.updatePlayerCount();
     },
 
     toggleParticipation(id) {
@@ -349,7 +351,7 @@ const app = {
                 player.handy = isNaN(handy) ? 0 : handy;
                 player.updatedAt = Date.now();
                 this.saveToStorage();
-                this.renderPlayerList();
+                this.patchPlayerRow(player);
                 if (this.rooms && this.rooms.length > 0) {
                     this.renderRooms();
                 }
@@ -357,7 +359,118 @@ const app = {
         });
     },
 
+    playerRowId(id) {
+        return 'player-row-' + id;
+    },
+
+    createPlayerRow(player) {
+        const li = document.createElement('li');
+        li.id = this.playerRowId(player.id);
+        li.dataset.playerId = String(player.id);
+        li.className = `player-item ${player.isActive ? '' : 'inactive'}`;
+        li.innerHTML = `
+            <div class="player-info">
+                <span class="player-name"></span>
+                <span class="player-handy-btn" title="클릭하여 핸디 수정" onclick="app.editPlayerHandy(${player.id})">
+                    핸디: ${player.handy} <small>✏️</small>
+                </span>
+            </div>
+            <div class="player-actions">
+                <div class="participation-toggle-group">
+                    <button type="button"
+                            class="btn-part ${player.isActive ? 'active' : ''}"
+                            onclick="app.setParticipation(${player.id}, true)">
+                        참여
+                    </button>
+                    <button type="button"
+                            class="btn-part ${!player.isActive ? 'inactive' : ''}"
+                            onclick="app.setParticipation(${player.id}, false)">
+                        비참여
+                    </button>
+                </div>
+                <button class="btn-remove" title="선수 삭제" onclick="app.removePlayer(${player.id})">×</button>
+            </div>
+        `;
+        const nameEl = li.querySelector('.player-name');
+        if (nameEl) nameEl.textContent = player.name || '';
+        return li;
+    },
+
+    patchPlayerRow(player) {
+        if (!player || !this.playerList) return;
+        const visible = this.playerNameMatches(player.name, this.playerQuery);
+        let li = document.getElementById(this.playerRowId(player.id));
+        if (li && li.parentNode !== this.playerList) li = null;
+        if (!visible) {
+            if (li && li.remove) li.remove();
+            return;
+        }
+        if (!li) {
+            li = this.createPlayerRow(player);
+            this.playerList.appendChild(li);
+            return;
+        }
+        li.className = `player-item ${player.isActive ? '' : 'inactive'}`;
+        const handyEl = li.querySelector('.player-handy-btn');
+        if (handyEl) handyEl.innerHTML = `핸디: ${player.handy} <small>✏️</small>`;
+        const buttons = li.querySelectorAll('.btn-part');
+        if (buttons[0]) buttons[0].className = `btn-part ${player.isActive ? 'active' : ''}`;
+        if (buttons[1]) buttons[1].className = `btn-part ${!player.isActive ? 'inactive' : ''}`;
+    },
+
+    renumberPlayerRows() {
+        if (!this.playerList || !this.playerList.querySelectorAll) return;
+        let activeIndex = 0;
+        this.playerList.querySelectorAll('.player-item').forEach((li) => {
+            const id = li.dataset ? li.dataset.playerId : '';
+            const player = (this.players || []).find((item) => String(item.id) === String(id));
+            const nameEl = li.querySelector('.player-name');
+            if (!nameEl || !player) return;
+            nameEl.textContent = player.isActive ? `${++activeIndex}. ${player.name}` : player.name;
+        });
+    },
+
+    updatePlayerCount() {
+        const activeCount = (this.players || []).filter(p => p.isActive).length;
+        if (this.playerCountEl) this.playerCountEl.textContent = activeCount;
+        if (this.assignRoomsBtn) this.assignRoomsBtn.disabled = activeCount < 2;
+        const emptyEl = document.getElementById('player-search-empty');
+        const visibleCount = (this.players || []).filter((player) => this.playerNameMatches(player.name, this.playerQuery)).length;
+        if (emptyEl) emptyEl.hidden = !(this.nameKey(this.playerQuery) && visibleCount === 0);
+    },
+
+    // 원격에서 바뀐 선수만 행을 고친다. 스크롤, 검색어, 포커스는 건드리지 않는다.
+    patchPlayerList(beforePlayers) {
+        if (!this.playerList) return;
+        const before = {};
+        (beforePlayers || []).forEach((player) => {
+            if (player && player.id != null) before[String(player.id)] = player;
+        });
+        const afterIds = {};
+        (this.players || []).forEach((player) => {
+            if (!player || player.id == null) return;
+            const id = String(player.id);
+            afterIds[id] = true;
+            const prev = before[id];
+            if (prev && prev.name === player.name && String(prev.handy) === String(player.handy) && prev.isActive === player.isActive) return;
+            this.patchPlayerRow(player);
+        });
+        Object.keys(before).forEach((id) => {
+            if (afterIds[id]) return;
+            const li = document.getElementById(this.playerRowId(id));
+            if (li && li.parentNode === this.playerList && li.remove) li.remove();
+        });
+        this.renumberPlayerRows();
+        this.updatePlayerCount();
+    },
+
     renderPlayerList() {
+        if (!this.playerList) return;
+        const scrollY = window.scrollY || 0;
+        const listScroll = this.playerList.scrollTop || 0;
+        const search = document.getElementById('player-search');
+        if (search && typeof search.value === 'string') this.playerQuery = search.value;
+
         this.playerList.innerHTML = '';
 
         // 참여자를 상단에, 비참여자를 하단에 정렬 (기존 등록 순서 유지)
@@ -366,48 +479,14 @@ const app = {
             return a.isActive ? -1 : 1;
         });
 
-        let activeIndex = 0;
-        let visibleCount = 0;
         sortedPlayers.forEach(player => {
-            const displayName = player.isActive 
-                ? `${++activeIndex}. ${player.name}` 
-                : player.name;
             if (!this.playerNameMatches(player.name, this.playerQuery)) return;
-            visibleCount += 1;
-
-            const li = document.createElement('li');
-            li.className = `player-item ${player.isActive ? '' : 'inactive'}`;
-            li.innerHTML = `
-                <div class="player-info">
-                    <span class="player-name">${displayName}</span>
-                    <span class="player-handy-btn" title="클릭하여 핸디 수정" onclick="app.editPlayerHandy(${player.id})">
-                        핸디: ${player.handy} <small>✏️</small>
-                    </span>
-                </div>
-                <div class="player-actions">
-                    <div class="participation-toggle-group">
-                        <button type="button" 
-                                class="btn-part ${player.isActive ? 'active' : ''}" 
-                                onclick="app.setParticipation(${player.id}, true)">
-                            참여
-                        </button>
-                        <button type="button" 
-                                class="btn-part ${!player.isActive ? 'inactive' : ''}" 
-                                onclick="app.setParticipation(${player.id}, false)">
-                            비참여
-                        </button>
-                    </div>
-                    <button class="btn-remove" title="선수 삭제" onclick="app.removePlayer(${player.id})">×</button>
-                </div>
-            `;
-            this.playerList.appendChild(li);
+            this.playerList.appendChild(this.createPlayerRow(player));
         });
-
-        const activeCount = this.players.filter(p => p.isActive).length;
-        this.playerCountEl.textContent = activeCount;
-        this.assignRoomsBtn.disabled = activeCount < 2; // Need at least 2 active players
-        const emptyEl = document.getElementById('player-search-empty');
-        if (emptyEl) emptyEl.hidden = !(this.nameKey(this.playerQuery) && visibleCount === 0);
+        this.renumberPlayerRows();
+        this.updatePlayerCount();
+        if (this.playerList.scrollTop != null) this.playerList.scrollTop = listScroll;
+        if (window.scrollTo && scrollY) window.scrollTo(0, scrollY);
     },
 
     // 🎩 참가하는 사람들을 마구 섞어서 3명씩 무작위로 조를 짜는 마법의 기능이에요!
@@ -1865,7 +1944,13 @@ const app = {
         const isKeypadOpen = !!(keypad && keypad.parentNode);
         const isDragging = !!document.querySelector('.touch-drag-avatar') || !!document.querySelector('.room-player.dragging');
         if (playersChanged && this.playerNameInput && document.activeElement !== this.playerNameInput && document.activeElement !== this.playerHandyInput) {
-            this.renderPlayerList();
+            const rowCount = this.playerList && this.playerList.querySelectorAll
+                ? this.playerList.querySelectorAll('.player-item').length
+                : 0;
+            const visiblePlayers = (this.players || []).some((player) => this.playerNameMatches(player.name, this.playerQuery));
+            if (this.currentStep === 'players' && rowCount === 0 && visiblePlayers) this.renderPlayerList();
+            else if (this.currentStep === 'players') this.patchPlayerList(before.players);
+            else this.renderPlayerList();
         }
         const sharedStep = this.live && this.live.step;
         const canFollow = sharedStep && sharedStep !== 'history' && this.currentStep !== 'history' && !isKeypadOpen && !isDragging;
