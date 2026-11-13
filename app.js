@@ -1,6 +1,7 @@
 const app = {
     // 푸터에 보이는 버전. 캐시된 예전 스크립트면 이 숫자가 안 바뀐다.
-    APP_VERSION: '20261026a',
+    APP_VERSION: '20261113a',
+    playerQuery: '',
     // 👥 선수들의 정보(이름, 핸디캡 등)를 담아둘 빈 바구니(배열)예요.
     players: [],
     // 🎲 3명씩 짜여진 조들을 담아둘 바구니예요.
@@ -171,7 +172,27 @@ const app = {
     },
 
     bindEvents() {
-        this.addPlayerBtn.addEventListener('click', () => this.addPlayer());
+        if (this.addPlayerBtn) this.addPlayerBtn.addEventListener('click', () => this.addPlayer());
+        const openAddBtn = document.getElementById('open-add-player-btn');
+        if (openAddBtn) openAddBtn.addEventListener('click', () => this.openAddPlayerModal());
+        const cancelAddBtn = document.getElementById('cancel-add-player-btn');
+        if (cancelAddBtn) cancelAddBtn.addEventListener('click', () => this.closeAddPlayerModal());
+        const addModal = document.getElementById('add-player-modal');
+        if (addModal) {
+            addModal.addEventListener('click', (event) => {
+                if (event.target === addModal) this.closeAddPlayerModal();
+            });
+        }
+        const playerSearch = document.getElementById('player-search');
+        if (playerSearch) {
+            playerSearch.addEventListener('input', () => {
+                this.playerQuery = playerSearch.value || '';
+                this.renderPlayerList();
+            });
+        }
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && this.isAddPlayerModalOpen()) this.closeAddPlayerModal();
+        });
         this.assignRoomsBtn.addEventListener('click', () => this.assignRooms());
         if (this.viewMidResultsBtn) this.viewMidResultsBtn.addEventListener('click', () => this.calculateRanking(false, true));
         this.viewResultsBtn.addEventListener('click', () => this.calculateRanking());
@@ -229,6 +250,7 @@ const app = {
 
         if (!name) return alert('이름을 입력해주세요.');
         if (isNaN(handy)) return alert('핸디를 숫자로 입력해주세요. (예: 18 또는 -5)');
+        if (this.hasDuplicateName(name)) return alert('이미 등록된 이름입니다.');
 
         const newPlayer = {
             id: this.allocateId(),
@@ -246,7 +268,44 @@ const app = {
         
         this.playerNameInput.value = '';
         this.playerHandyInput.value = '';
-        this.playerNameInput.focus();
+        this.closeAddPlayerModal();
+    },
+
+    // 검색과 중복 확인은 공백을 뺀 이름으로 비교한다. 검색은 부분일치다.
+    nameKey(value) {
+        return String(value == null ? '' : value).replace(/[\s\u3000]+/g, '').toLowerCase();
+    },
+
+    playerNameMatches(name, query) {
+        const needle = this.nameKey(query);
+        if (!needle) return true;
+        return this.nameKey(name).includes(needle);
+    },
+
+    hasDuplicateName(name) {
+        const key = this.nameKey(name);
+        if (!key) return false;
+        return (this.players || []).some((player) => this.nameKey(player.name) === key);
+    },
+
+    isAddPlayerModalOpen() {
+        const modal = document.getElementById('add-player-modal');
+        return !!(modal && !modal.hidden);
+    },
+
+    openAddPlayerModal() {
+        if (this.playerNameInput) this.playerNameInput.value = '';
+        if (this.playerHandyInput) this.playerHandyInput.value = '';
+        const modal = document.getElementById('add-player-modal');
+        if (!modal) return;
+        modal.hidden = false;
+        if (this.playerNameInput && this.playerNameInput.focus) this.playerNameInput.focus();
+    },
+
+    closeAddPlayerModal() {
+        const modal = document.getElementById('add-player-modal');
+        if (modal) modal.hidden = true;
+        if (this.closeKeypad) this.closeKeypad();
     },
 
     // 🔘 특정 선수를 오늘 경기에 참여시킬지(참여/비참여) 설정하는 기능이에요.
@@ -308,10 +367,13 @@ const app = {
         });
 
         let activeIndex = 0;
+        let visibleCount = 0;
         sortedPlayers.forEach(player => {
             const displayName = player.isActive 
                 ? `${++activeIndex}. ${player.name}` 
                 : player.name;
+            if (!this.playerNameMatches(player.name, this.playerQuery)) return;
+            visibleCount += 1;
 
             const li = document.createElement('li');
             li.className = `player-item ${player.isActive ? '' : 'inactive'}`;
@@ -344,6 +406,8 @@ const app = {
         const activeCount = this.players.filter(p => p.isActive).length;
         this.playerCountEl.textContent = activeCount;
         this.assignRoomsBtn.disabled = activeCount < 2; // Need at least 2 active players
+        const emptyEl = document.getElementById('player-search-empty');
+        if (emptyEl) emptyEl.hidden = !(this.nameKey(this.playerQuery) && visibleCount === 0);
     },
 
     // 🎩 참가하는 사람들을 마구 섞어서 3명씩 무작위로 조를 짜는 마법의 기능이에요!
