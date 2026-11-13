@@ -194,21 +194,36 @@ input:focus {
     box-shadow: none;
 }
 
-.btn-new-player {
-    margin-top: 0;
-    margin-bottom: 12px;
-    min-height: 48px;
-    font-size: 1rem;
+.player-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 12px;
+    padding: 0;
 }
 
-.player-search {
-    margin-bottom: 12px;
+.player-toolbar .player-search {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+}
+
+.btn-outline.btn-new-player {
+    width: auto;
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 8px 12px;
+    min-height: 44px;
+    border-radius: 12px;
+    font-size: 0.82rem;
+    line-height: 1.2;
+    white-space: nowrap;
 }
 
 #player-search {
     width: 100%;
     box-sizing: border-box;
-    min-height: 48px;
+    min-height: 44px;
     font-size: 16px;
 }
 
@@ -800,6 +815,18 @@ footer {
     color: var(--text-main);
     font-size: 0.75rem;
     font-weight: 600;
+}
+
+.refresh-row {
+    display: flex;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.refresh-row.is-hidden {
+    display: none;
 }
 
 .btn-refresh {
