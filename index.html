@@ -7,7 +7,14 @@
     <meta http-equiv="Pragma" content="no-cache">
     <title>싱글벙글 - 즐거운골프생활</title>
     <meta name="description" content="골프 모임 회원들을 위한 간편하고 고급스러운 내기 계산기">
-    <link rel="stylesheet" href="style.css?v=20261113c">
+    <meta name="theme-color" content="#00a36c">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="싱글벙글">
+    <link rel="manifest" href="manifest.webmanifest?v=20261117a">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20261117a">
+    <link rel="stylesheet" href="style.css?v=20261117a">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
@@ -170,16 +177,27 @@
 
         <footer>
             <p>&copy; 2026 수원~나무가 만들었지롱~ <span id="app-version">v…</span></p>
+            <button type="button" id="install-menu-btn" class="install-menu-btn">앱 설치</button>
         </footer>
+        <aside id="install-banner" class="install-banner" hidden>
+            <div class="install-banner-copy">
+                <strong id="install-banner-title">홈 화면에 추가</strong>
+                <span id="install-banner-detail">앱처럼 바로 열기</span>
+            </div>
+            <a id="install-banner-link" class="install-banner-go" hidden>Chrome으로 열기</a>
+            <button type="button" id="install-banner-go" class="install-banner-go">추가</button>
+            <button type="button" id="install-banner-close" aria-label="일주일 동안 닫기">✕</button>
+        </aside>
     </div>
 
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="firebase-config.js?v=20261113c"></script>
-    <script src="score.js?v=20261113c"></script>
-    <script src="history-match.js?v=20261113c"></script>
-    <script src="history-stats.js?v=20261113c"></script>
-    <script src="sync-model.js?v=20261113c"></script>
-    <script src="app.js?v=20261113c"></script>
+    <script src="firebase-config.js?v=20261117a"></script>
+    <script src="score.js?v=20261117a"></script>
+    <script src="history-match.js?v=20261117a"></script>
+    <script src="history-stats.js?v=20261117a"></script>
+    <script src="sync-model.js?v=20261117a"></script>
+    <script src="install-prompt.js?v=20261117a"></script>
+    <script src="app.js?v=20261117a"></script>
 </body>
 </html>

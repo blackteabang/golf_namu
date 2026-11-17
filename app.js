@@ -1,6 +1,6 @@
 const app = {
     // 푸터에 보이는 버전. 캐시된 예전 스크립트면 이 숫자가 안 바뀐다.
-    APP_VERSION: '20261113c',
+    APP_VERSION: '20261117a',
     playerQuery: '',
     // 👥 선수들의 정보(이름, 핸디캡 등)를 담아둘 빈 바구니(배열)예요.
     players: [],
@@ -60,6 +60,7 @@ const app = {
         this.initServer(); // 클라우드 서버와 연결하고 최신 데이터를 불러와요.
         this.showAppVersion();
         this.dropStaleWorkers();
+        this.setupInstall();
         this.renderPlayerList(); // 화면에 선수들 이름을 예쁘게 그려줘요.
         window.addEventListener('pagehide', () => {
             if (this._syncTimer) this.flushSync({ announce: false });
@@ -1416,9 +1417,135 @@ const app = {
         if (typeof navigator === 'undefined' || !navigator.serviceWorker || !navigator.serviceWorker.getRegistrations) return;
         navigator.serviceWorker.getRegistrations().then((regs) => {
             (regs || []).forEach((reg) => {
+                const worker = reg && (reg.active || reg.waiting || reg.installing);
+                const script = worker && worker.scriptURL ? worker.scriptURL : '';
+                if (script.indexOf('sw.js') !== -1) return;
                 if (reg && reg.unregister) reg.unregister();
             });
         }).catch(() => {});
+    },
+
+    registerAppWorker() {
+        if (typeof navigator === 'undefined' || !navigator.serviceWorker || !navigator.serviceWorker.register) return;
+        const scriptUrl = new URL('sw.js?v=' + this.APP_VERSION, window.location.href);
+        navigator.serviceWorker.register(scriptUrl, { scope: './' }).catch((error) => {
+            console.warn('service worker', error);
+        });
+    },
+
+    setupInstall() {
+        this._installPrompt = null;
+        const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+        const detect = (typeof GolfInstall !== 'undefined') ? GolfInstall : null;
+        this._installEnv = {
+            ios: !!(detect && detect.isIOS(ua)),
+            inApp: !!(detect && detect.isInApp(ua)),
+            kakaoAndroid: !!(detect && detect.isKakaoAndroid(ua))
+        };
+        window.addEventListener('beforeinstallprompt', (event) => {
+            event.preventDefault();
+            this._installPrompt = event;
+            this.refreshInstallBanner(false);
+        });
+        window.addEventListener('appinstalled', () => {
+            this._installPrompt = null;
+            this.hideInstallBanner();
+            this.syncInstallMenu();
+        });
+        const go = document.getElementById('install-banner-go');
+        const link = document.getElementById('install-banner-link');
+        const close = document.getElementById('install-banner-close');
+        const menu = document.getElementById('install-menu-btn');
+        if (go) go.addEventListener('click', () => this.activateInstall());
+        if (link) link.addEventListener('click', (event) => {
+            if (this._installEnv.kakaoAndroid) return;
+            event.preventDefault();
+            this.activateInstall();
+        });
+        if (close) close.addEventListener('click', () => this.dismissInstallBanner());
+        if (menu) menu.addEventListener('click', () => this.refreshInstallBanner(true));
+        this.registerAppWorker();
+        this.refreshInstallBanner(false);
+    },
+
+    installStandalone() {
+        const media = window.matchMedia && window.matchMedia('(display-mode: standalone)');
+        return !!((media && media.matches) || (typeof navigator !== 'undefined' && navigator.standalone));
+    },
+
+    refreshInstallBanner(force) {
+        if (typeof GolfInstall === 'undefined') return;
+        const env = {
+            standalone: this.installStandalone(),
+            dismissedAt: Number(this.lsGet('golf_a2hs_dismissed_at')) || 0,
+            now: Date.now(),
+            hasPrompt: !!this._installPrompt,
+            ios: !!(this._installEnv && this._installEnv.ios),
+            inApp: !!(this._installEnv && this._installEnv.inApp),
+            force: !!force
+        };
+        this.syncInstallMenu();
+        if (!GolfInstall.shouldShow(env)) {
+            this.hideInstallBanner();
+            return;
+        }
+        this.presentInstallBanner(GolfInstall.modeOf(env));
+    },
+
+    presentInstallBanner(mode) {
+        const banner = document.getElementById('install-banner');
+        if (!banner || typeof GolfInstall === 'undefined') return;
+        const copy = GolfInstall.copyFor(mode);
+        const title = document.getElementById('install-banner-title');
+        const detail = document.getElementById('install-banner-detail');
+        const go = document.getElementById('install-banner-go');
+        const link = document.getElementById('install-banner-link');
+        if (title) title.textContent = copy.title;
+        if (detail) detail.textContent = copy.detail;
+        if (go) {
+            go.hidden = !copy.action;
+            go.textContent = copy.action || '추가';
+        }
+        if (link) {
+            const showLink = mode === 'inapp' && this._installEnv && this._installEnv.kakaoAndroid;
+            link.hidden = !showLink;
+            if (showLink) link.href = GolfInstall.chromeIntent(window.location.href);
+        }
+        banner.hidden = false;
+        if (document.body && document.body.classList) document.body.classList.add('install-open');
+    },
+
+    hideInstallBanner() {
+        const banner = document.getElementById('install-banner');
+        if (banner) banner.hidden = true;
+        if (document.body && document.body.classList) document.body.classList.remove('install-open');
+    },
+
+    dismissInstallBanner() {
+        this.lsSet('golf_a2hs_dismissed_at', String(Date.now()));
+        this.hideInstallBanner();
+    },
+
+    syncInstallMenu() {
+        const menu = document.getElementById('install-menu-btn');
+        if (menu) menu.hidden = this.installStandalone();
+    },
+
+    async activateInstall() {
+        if (this._installPrompt && this._installPrompt.prompt) {
+            this._installPrompt.prompt();
+            try {
+                await this._installPrompt.userChoice;
+            } catch (error) {
+                console.warn('install prompt', error);
+            }
+            this._installPrompt = null;
+            this.hideInstallBanner();
+            return;
+        }
+        if (this._installEnv && this._installEnv.kakaoAndroid && typeof GolfInstall !== 'undefined') {
+            window.location.href = GolfInstall.chromeIntent(window.location.href);
+        }
     },
 
     emptyLive() {
