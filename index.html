@@ -12,16 +12,16 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="싱글벙글">
-    <link rel="manifest" href="manifest.webmanifest?v=20261117a">
-    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20261117a">
-    <link rel="stylesheet" href="style.css?v=20261117a">
+    <link rel="manifest" href="manifest.webmanifest?v=20261121a">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20261121a">
+    <link rel="stylesheet" href="style.css?v=20261121a">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="app-container">
-        <header style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 2rem; gap: 8px;">
+        <header style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 0.75rem; gap: 8px;">
             <button id="reset-rooms-btn" style="white-space: nowrap; flex-shrink: 0; background: white; border: 2px solid var(--accent); border-radius: 10px; padding: 8px 12px; font-size: 0.9rem; font-weight: 800; cursor: pointer; color: var(--accent); box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-top: 4px;">새로만들기</button>
             
             <div style="display: flex; flex-direction: column; align-items: center; flex-shrink: 1; min-width: 0;">
@@ -73,7 +73,7 @@
                         <span style="font-size: 1.1rem;">💾</span> 임시저장
                     </button>
                 </div>
-                <p class="step-guide-tip">💡 선수를 드래그(⠿)하여 다른 방으로 이동할 수 있습니다.</p>
+                <p class="step-guide-tip">💡 ∷ 끌어서 방 이동</p>
                 <div id="rooms-container" class="rooms-grid">
                     <!-- Rooms will be generated here -->
                 </div>
@@ -192,12 +192,12 @@
 
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="firebase-config.js?v=20261117a"></script>
-    <script src="score.js?v=20261117a"></script>
-    <script src="history-match.js?v=20261117a"></script>
-    <script src="history-stats.js?v=20261117a"></script>
-    <script src="sync-model.js?v=20261117a"></script>
-    <script src="install-prompt.js?v=20261117a"></script>
-    <script src="app.js?v=20261117a"></script>
+    <script src="firebase-config.js?v=20261121a"></script>
+    <script src="score.js?v=20261121a"></script>
+    <script src="history-match.js?v=20261121a"></script>
+    <script src="history-stats.js?v=20261121a"></script>
+    <script src="sync-model.js?v=20261121a"></script>
+    <script src="install-prompt.js?v=20261121a"></script>
+    <script src="app.js?v=20261121a"></script>
 </body>
 </html>

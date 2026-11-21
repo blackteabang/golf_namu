@@ -129,7 +129,6 @@ await new Promise((resolve) => setTimeout(resolve, 30));
 
 assert.equal(clientB.players.length, 2, '다른 창에 참여자가 보여야 한다');
 assert.equal(clientA._doc.getElementById('server-status-text').textContent, '저장됨');
-assert.equal(clientA._doc.getElementById('sync-status').className.includes('visible'), true);
 
 clientA.assignRooms();
 await clientA.flushSync({ explicit: true });

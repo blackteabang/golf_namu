@@ -20,10 +20,10 @@ assert.equal(GolfInstall.isKakaoAndroid('Mozilla/5.0 (Linux; Android 14) KAKAOTA
 assert.equal(GolfInstall.isInApp('Mozilla/5.0 NAVER(inapp)'), true);
 assert.equal(GolfInstall.chromeIntent('https://blackteabang.github.io/golf_namu/').includes('package=com.android.chrome'), true);
 assert.equal(GolfInstall.skipsFetch('https://namugolf-2c1f8-default-rtdb.firebaseio.com/golf_namu.json'), true);
-assert.equal(GolfInstall.skipsFetch('https://blackteabang.github.io/golf_namu/app.js?v=20261117a'), false);
+assert.equal(GolfInstall.skipsFetch('https://blackteabang.github.io/golf_namu/app.js?v=20261121a'), false);
 
 const worker = fs.readFileSync(new URL('./sw.js', import.meta.url), 'utf8');
-assert.equal(worker.includes("var VERSION = '20261117a'"), true);
+assert.equal(worker.includes("var VERSION = '20261121a'"), true);
 assert.equal(worker.includes("var CACHE = 'golf-namu-' + VERSION"), true);
 assert.equal(worker.includes('firebase'), true);
 assert.equal(worker.includes("addEventListener('fetch'"), true);

@@ -1,6 +1,6 @@
 const app = {
     // 푸터에 보이는 버전. 캐시된 예전 스크립트면 이 숫자가 안 바뀐다.
-    APP_VERSION: '20261117a',
+    APP_VERSION: '20261121a',
     playerQuery: '',
     // 👥 선수들의 정보(이름, 핸디캡 등)를 담아둘 빈 바구니(배열)예요.
     players: [],
@@ -1400,12 +1400,11 @@ const app = {
         if (userNav && previous !== stepName) this.publishLive(stepName);
     },
 
-    // 참여자 등록 화면에서만 새로고침 줄 전체를 뺀다. 다른 화면의 버튼과 동기화는 그대로다.
+    // 새로고침 버튼은 화면에 두지 않는다. 서버에서 다시 읽는 함수는 그대로 둔다.
     syncRefreshRow() {
         const row = document.getElementById('refresh-server-row');
         if (!row || !row.classList) return;
-        if (this.currentStep === 'players') row.classList.add('is-hidden');
-        else row.classList.remove('is-hidden');
+        row.classList.add('is-hidden');
     },
 
     showAppVersion() {
