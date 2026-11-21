@@ -38,7 +38,7 @@ body {
 
 header {
     text-align: center;
-    margin-bottom: 2rem;
+    margin-bottom: 0.75rem;
     animation: fadeInDown 0.8s ease-out;
     position: relative;
 }
@@ -412,14 +412,17 @@ input:focus {
 }
 
 .step-guide-tip {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: var(--text-muted);
     background: rgba(255, 255, 255, 0.6);
-    padding: 6px 12px;
+    padding: 6px 10px;
     border-radius: 10px;
-    margin-bottom: 1.2rem;
+    margin-bottom: 0.8rem;
     text-align: center;
     border: 1px solid rgba(0, 0, 0, 0.04);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .rooms-grid {
@@ -746,23 +749,11 @@ td:nth-child(3), td:nth-child(4), td:nth-child(5) {
     color: white;
 }
 
-.sync-status {
-    display: none;
-    align-items: center;
-    margin-top: 6px;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.9);
-    color: var(--primary);
-    font-size: 0.75rem;
-    font-weight: 800;
-    line-height: 1.2;
-    max-width: 100%;
-    white-space: nowrap;
-}
-
+.sync-status,
 .sync-status.visible {
-    display: inline-flex;
+    display: none;
+    margin: 0;
+    padding: 0;
 }
 
 .sync-status.saved,
@@ -817,9 +808,9 @@ footer {
     font-weight: 600;
 }
 
-.refresh-row {
-    display: flex;
-    justify-content: center;
+.refresh-row,
+.refresh-row.is-hidden {
+    display: none;
     margin: 0;
     padding: 0;
     border: 0;
